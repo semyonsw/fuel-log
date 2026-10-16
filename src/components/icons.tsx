@@ -1,13 +1,15 @@
 /**
- * The app's three icons, built from plain Views.
+ * The app's icons.
  *
- * react-native-svg isn't installed and emoji render in full colour (and differ
- * per OEM font), so the gauge and the fuel drop are drawn with borders and a
- * rotation. They sit inside a round badge so every row kind has the same left
- * edge and the kind is recognisable before the text is read.
+ * The row badges (gauge, fuel drop) are plain Views with borders and a
+ * rotation, as before; they sit inside a round badge so every row kind has
+ * the same left edge. Line icons (tabs, AI, camera…) are SVG paths on a 24
+ * grid, stroked in `currentColor`-style via a `color` prop, because emoji
+ * render in full colour and differ per phone maker.
  */
 
 import { StyleSheet, View } from 'react-native';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { colors } from '../theme';
 
@@ -27,6 +29,172 @@ export function DropIcon({ color = colors.accent }: { color?: string }) {
     <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
       <View style={[styles.drop, { backgroundColor: color }]} />
     </View>
+  );
+}
+
+type IconProps = { color?: string; size?: number };
+
+function Line({
+  size = 24,
+  color = colors.text,
+  children,
+  width = 1.8,
+}: IconProps & { children: React.ReactNode; width?: number }) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={width}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </Svg>
+  );
+}
+
+/** Log tab: a clock beside list lines — the timeline. */
+export function LogTabIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Circle cx="6" cy="7" r="3.2" />
+      <Path d="M6 5.6V7l1 .9" />
+      <Path d="M12.5 7H21M3 13.5h18M3 18.5h18" />
+    </Line>
+  );
+}
+
+/** Summary tab: a gauge dial. */
+export function SummaryTabIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M3.5 17.5a8.5 8.5 0 0 1 17 0" />
+      <Path d="M12 17.5l4-5" />
+      <Path d="M6.4 11.6l.9.9M12 8.6v1.3M17.6 11.6l-.9.9" />
+      <Path d="M3 21h18" />
+    </Line>
+  );
+}
+
+export function PlusIcon({ size = 26, color = colors.onAccent }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 26 26">
+      <Path d="M13 3v20M3 13h20" stroke={color} strokeWidth={3} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Three four-point sparkles: the AI. Filled so it reads at a glance on the button. */
+export function SparklesIcon({ size = 28, color = colors.onAccent }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M10 2.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"
+        fill={color}
+      />
+      <Path
+        d="M18.5 13c.3 2 1.3 3 3.3 3.3-2 .3-3 1.3-3.3 3.3-.3-2-1.3-3-3.3-3.3 2-.3 3-1.3 3.3-3.3z"
+        fill={color}
+      />
+      <Path
+        d="M6 16.5c.2 1.4.9 2.1 2.3 2.3-1.4.2-2.1.9-2.3 2.3-.2-1.4-.9-2.1-2.3-2.3 1.4-.2 2.1-.9 2.3-2.3z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function CameraIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <Circle cx="12" cy="13" r="3.6" />
+    </Line>
+  );
+}
+
+export function GalleryIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <Circle cx="8.5" cy="9.5" r="1.6" />
+      <Path d="M21 16l-5-5-8 8.5" />
+    </Line>
+  );
+}
+
+export function SendIcon({ size = 22, color = colors.onAccent }: IconProps) {
+  return (
+    <Line size={size} color={color} width={2.2}>
+      <Path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" />
+    </Line>
+  );
+}
+
+export function HistoryIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+      <Path d="M3 3.5V8h4.5" />
+      <Path d="M12 7.5V12l3 2" />
+    </Line>
+  );
+}
+
+export function KeyIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Circle cx="8" cy="14" r="4" />
+      <Path d="M11 11l8-8M16 6l2.5 2.5M14 8l2 2" />
+    </Line>
+  );
+}
+
+export function ChevronIcon({
+  size = 16,
+  color = colors.faint,
+  down = false,
+}: IconProps & { down?: boolean }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16">
+      <Path
+        d={down ? 'M3 6l5 5 5-5' : 'M6 3l5 5-5 5'}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function CloseIcon({ size = 18, color = colors.text }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 18 18">
+      <Path d="M3 3l12 12M15 3L3 15" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Record: a ring with a dot, like a dashcam's. */
+export function RecordIcon({ size = 20, color = colors.accent }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20">
+      <Circle cx="10" cy="10" r="8" fill="none" stroke={color} strokeWidth={2} />
+      <Circle cx="10" cy="10" r="4" fill={color} />
+    </Svg>
+  );
+}
+
+export function TrashIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" />
+    </Line>
   );
 }
 

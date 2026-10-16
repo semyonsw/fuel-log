@@ -7,13 +7,18 @@
  *   Segmented   equal-width options in one track (Trip/Range/Refuel, Week/Month/All)
  *   Field       label + TextInput + error line, 56 high so it's thumb-friendly
  *   Button      full-width primary / ghost / danger action
+ *   Sheet       a bottom sheet over a dimmed backdrop (confirmations)
  *
  * Kept deliberately unparameterised: the variants here are the ones the screens
  * actually use, so a new control is a composition, not new spacing decisions.
  */
 
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, type ReactNode } from 'react';
 import {
+  Animated,
+  BackHandler,
+  KeyboardAvoidingView,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -25,7 +30,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, radius, spacing, TOUCH, type } from '../theme';
+import { colors, fonts, radius, spacing, TOUCH, type } from '../theme';
 
 /**
  * Pressable with pressed feedback. Android ripple alone is easy to miss on a
@@ -94,13 +99,16 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  dark = false,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  /** Inside a surface card the track sits darker, on the page colour. */
+  dark?: boolean;
 }) {
   return (
-    <View style={styles.segTrack} accessibilityRole="tablist">
+    <View style={[styles.segTrack, dark && styles.segTrackDark]} accessibilityRole="tablist">
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -128,21 +136,34 @@ export const Field = forwardRef<
     error?: string;
     /** Rendered at the right of the label row, e.g. a remove button. */
     accessory?: ReactNode;
+    /** A small amber tag after the label: where a pre-filled value came from ("from photo"). */
+    marker?: string;
+    /** Number fields use the mono figures; text fields the UI face. */
+    numeric?: boolean;
+    /** The Range kind's one big field. */
+    big?: boolean;
   }
->(function Field({ label, suffix, error, accessory, style, ...input }, ref) {
+>(function Field({ label, suffix, error, accessory, marker, numeric, big, style, ...input }, ref) {
   return (
     <View style={styles.field}>
       <View style={styles.fieldLabelRow}>
-        <Text style={styles.label}>{label}</Text>
+        <View style={styles.labelLeft}>
+          <Text style={styles.label} numberOfLines={1}>
+            {label}
+          </Text>
+          {marker ? <Text style={styles.marker}>{marker}</Text> : null}
+        </View>
         {accessory}
       </View>
-      <View style={[styles.inputWrap, error ? styles.inputWrapError : null]}>
+      <View
+        style={[styles.inputWrap, big && styles.inputWrapBig, error ? styles.inputWrapError : null]}
+      >
         <TextInput
           ref={ref}
           placeholderTextColor={colors.muted}
           selectionColor={colors.accent}
           cursorColor={colors.accent}
-          style={[styles.input, style]}
+          style={[styles.input, numeric && styles.inputNum, big && styles.inputBig, style]}
           accessibilityLabel={label}
           {...input}
         />
@@ -198,6 +219,104 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
+/**
+ * A bottom sheet over a dimmed backdrop, sliding up from the thumb's side of
+ * the screen. Tapping the backdrop or Android back is "cancel".
+ */
+export function Sheet({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const y = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      y.setValue(0);
+      Animated.timing(y, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+    }
+  }, [visible, y]);
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <KeyboardAvoidingView behavior="padding" style={styles.flex1}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close">
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                opacity: y,
+                transform: [
+                  { translateY: y.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+                ],
+              },
+            ]}
+          >
+            {/* Swallow taps inside the sheet so they don't reach the backdrop. */}
+            <Pressable onPress={() => {}} style={styles.sheetInner}>
+              {children}
+            </Pressable>
+          </Animated.View>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+/** "Delete this entry?"-style confirmation, as a sheet with two equal buttons. */
+export function ConfirmSheet({
+  visible,
+  title,
+  body,
+  confirmLabel,
+  danger = false,
+  onConfirm,
+  onCancel,
+}: {
+  visible: boolean;
+  title: string;
+  body?: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Sheet visible={visible} onClose={onCancel}>
+      <Text style={styles.sheetTitle}>{title}</Text>
+      {body ? <Text style={styles.sheetBody}>{body}</Text> : null}
+      <View style={styles.sheetActions}>
+        <View style={styles.flex1}>
+          <Button label="Cancel" variant="ghost" onPress={onCancel} />
+        </View>
+        <View style={styles.flex1}>
+          <Button
+            label={confirmLabel}
+            variant={danger ? 'danger' : 'primary'}
+            onPress={onConfirm}
+          />
+        </View>
+      </View>
+    </Sheet>
+  );
+}
+
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   disabledTap: { opacity: 0.4 },
@@ -230,6 +349,7 @@ const styles = StyleSheet.create({
     padding: 4,
     gap: 4,
   },
+  segTrackDark: { backgroundColor: colors.bg },
   seg: {
     flex: 1,
     minHeight: TOUCH - 4,
@@ -247,7 +367,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 20,
   },
-  label: { color: colors.muted, ...type.label },
+  label: { color: colors.muted, ...type.label, flexShrink: 1 },
+  labelLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
+  marker: {
+    color: colors.accent,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -258,8 +390,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.lg,
   },
+  inputWrapBig: { minHeight: 80 },
   inputWrapError: { borderColor: colors.danger },
-  input: { flex: 1, color: colors.text, fontSize: 18, paddingVertical: spacing.md },
+  input: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.ui,
+    fontSize: 18,
+    paddingVertical: spacing.md,
+  },
+  inputNum: { fontFamily: fonts.num, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  inputBig: { fontSize: 40, fontWeight: '700', letterSpacing: -1 },
   suffix: { color: colors.muted, ...type.bodyStrong, marginLeft: spacing.sm },
   error: { color: colors.danger, ...type.small },
   button: {
@@ -273,5 +414,18 @@ const styles = StyleSheet.create({
   buttonGhost: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
   buttonDanger: { backgroundColor: colors.dangerSoft },
   buttonDim: { opacity: 0.45 },
-  buttonText: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  buttonText: { color: colors.text, fontFamily: fonts.ui, fontSize: 17, fontWeight: '700' },
+  flex1: { flex: 1 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+  },
+  sheetInner: { padding: spacing.lg, paddingTop: spacing.xl, paddingBottom: 36, gap: spacing.sm },
+  sheetTitle: { color: colors.text, fontFamily: fonts.ui, fontSize: 20, fontWeight: '700' },
+  sheetBody: { color: colors.muted, fontFamily: fonts.ui, fontSize: 16, lineHeight: 23 },
+  sheetActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
 });

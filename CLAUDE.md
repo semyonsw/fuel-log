@@ -71,11 +71,15 @@ So check the certificate on the built APK, every release.
 export PATH="/root/android-sdk/build-tools/36.0.0:$PATH"
 apksigner verify --print-certs <apk> | grep "certificate DN"   # CN=Android Debug
 aapt2 dump badging <apk> | head -1                             # package, versionCode, versionName
-aapt2 dump badging <apk> | grep permission                     # VIBRATE, nothing surprising
+aapt2 dump badging <apk> | grep permission                     # see expected list below
 ```
 
 The manifest merger takes the union of every library's permissions, so the only
-honest permission check reads the built file.
+honest permission check reads the built file. Expected since 1.1.0: INTERNET,
+VIBRATE, ACCESS_FINE/COARSE_LOCATION, ACCESS_BACKGROUND_LOCATION,
+FOREGROUND_SERVICE(_LOCATION), POST_NOTIFICATIONS, CAMERA, plus library
+housekeeping (WAKE_LOCK, ACCESS_NETWORK_STATE, RECEIVE_BOOT_COMPLETED…).
+RECORD_AUDIO is blocked in app.json.
 
 To prove the JS that shipped is the JS you wrote, grep the bundle inside the APK
 for a string your change introduced:

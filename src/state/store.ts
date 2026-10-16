@@ -33,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { sanitizeEntries } from '../lib/sanitize';
 import type { Entry } from '../types';
 
 export const STORAGE_KEY = 'fuel-log/v1';
@@ -45,22 +46,11 @@ interface LogState {
   /** Replaces the entry with the same id; an unknown id is a no-op. */
   update: (e: Entry) => void;
   remove: (id: string) => void;
+  /** Wholesale, for "Import → Replace" and "Import → Merge" (already merged by lib/backup). */
+  setAll: (entries: Entry[]) => void;
 }
 
-const KINDS = new Set(['trip', 'reading', 'refuel']);
-
-/** Whatever was on disk → the entries worth keeping. */
-export function sanitizeEntries(raw: unknown): Entry[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (e): e is Entry =>
-      typeof e === 'object' &&
-      e !== null &&
-      typeof (e as Entry).id === 'string' &&
-      typeof (e as Entry).at === 'number' &&
-      KINDS.has((e as Entry).kind),
-  );
-}
+export { sanitizeEntries };
 
 export const useLog = create<LogState>()(
   persist(
@@ -75,6 +65,7 @@ export const useLog = create<LogState>()(
             : s,
         ),
       remove: (id) => set((s) => ({ entries: s.entries.filter((x) => x.id !== id) })),
+      setAll: (entries) => set({ entries }),
     }),
     {
       name: STORAGE_KEY,

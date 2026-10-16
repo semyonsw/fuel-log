@@ -15,7 +15,7 @@
  * they are shown under the input itself, not in a banner.
  */
 
-import type { Entry, EntryKind } from '../types';
+import type { Entry, EntryKind, FuelGrade, TrackPoint } from '../types';
 import { parseNumber } from './numbers';
 import { normalizePlace } from './places';
 
@@ -29,6 +29,11 @@ export type Draft = {
   range: string;
   liters: string;
   price: string;
+  station: string;
+  address: string;
+  grade?: FuelGrade;
+  /** A recorded GPS route rides along untouched; only trips keep it. */
+  track?: TrackPoint[];
   note: string;
 };
 
@@ -47,7 +52,29 @@ export function emptyDraft(kind: EntryKind, now: number): Draft {
     range: '',
     liters: '',
     price: '',
+    station: '',
+    address: '',
     note: '',
+  };
+}
+
+/**
+ * A new trip from a finished recording. The GPS distance is only a pre-fill:
+ * it lands in the same string field the user types into, so whatever they
+ * type over it is what validation reads and what gets saved.
+ */
+export function draftFromTrack(
+  track: TrackPoint[],
+  distanceKm: number,
+  now: number,
+  names: { from?: string; to?: string } = {},
+): Draft {
+  return {
+    ...emptyDraft('trip', now),
+    track,
+    distance: track.length > 1 ? String(Math.round(distanceKm * 10) / 10) : '',
+    from: names.from ?? '',
+    to: names.to ?? '',
   };
 }
 
@@ -65,9 +92,13 @@ export function draftFromEntry(e: Entry): Draft {
     draft.stops = [...e.stops];
     draft.to = e.to;
     draft.distance = str(e.distanceKm);
+    if (e.track) draft.track = e.track;
   } else if (e.kind === 'refuel') {
     draft.liters = str(e.liters);
     draft.price = str(e.priceAmd);
+    draft.station = e.station ?? '';
+    draft.address = e.address ?? '';
+    if (e.grade) draft.grade = e.grade;
   }
   return draft;
 }
@@ -118,6 +149,7 @@ export function validateDraft(
         to,
         ...(distance.value !== undefined ? { distanceKm: distance.value } : {}),
         ...(range.value !== undefined ? { rangeKm: range.value } : {}),
+        ...(d.track && d.track.length > 0 ? { track: d.track } : {}),
       },
     };
   }
@@ -146,6 +178,34 @@ export function validateDraft(
       // Money is whole AMD throughout the model.
       priceAmd: Math.round(price.value),
       ...(range.value !== undefined ? { rangeKm: range.value } : {}),
+      ...(normalizePlace(d.station) ? { station: normalizePlace(d.station) } : {}),
+      ...(normalizePlace(d.address) ? { address: normalizePlace(d.address) } : {}),
+      ...(d.grade ? { grade: d.grade } : {}),
     },
   };
+}
+
+const FIELD_NAMES: Record<keyof DraftErrors, string> = {
+  from: 'From',
+  to: 'To',
+  distance: 'Distance',
+  range: 'Range left',
+  liters: 'Liters',
+  price: 'Total paid',
+};
+
+/**
+ * The one line above Save that says why it is dim: what is missing, then what
+ * does not read as a number. Empty when the draft is valid.
+ */
+export function saveHint(errors: DraftErrors): string {
+  const keys = Object.keys(errors) as (keyof DraftErrors)[];
+  const bad = keys.filter((k) => errors[k] === NOT_A_NUMBER).map((k) => FIELD_NAMES[k]);
+  const need = keys.filter((k) => errors[k] !== NOT_A_NUMBER).map((k) => FIELD_NAMES[k]);
+  return [
+    need.length ? `To save, fill in: ${need.join(', ')}` : '',
+    bad.length ? `Check: ${bad.join(', ')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

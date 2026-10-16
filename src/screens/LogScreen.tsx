@@ -1,25 +1,39 @@
 /**
- * The Log tab: current range up top, then the day-grouped timeline.
+ * The Log tab: current range up top, the trip recorder, then the day-grouped
+ * timeline.
  *
  * The range card answers the question the user opens the app with ("how much
- * is left?") before anything else. The timeline reads like the old notes,
- * newest first, one card per day. Rows in a day share one rounded card (corners
- * on the first/last row only) so a busy day reads as a unit.
+ * is left?") before anything else. Under it sits the GPS recorder: "Start
+ * trip" when setting off, then a live card (km so far, minutes) with Stop.
+ * It lives here rather than in the Trip form because the form would have to
+ * stay open for the whole drive; Stop opens a new Trip already holding the
+ * route and its distance.
  *
- * The "+" button floats bottom-right, inside thumb reach, above the tab bar.
+ * The timeline reads like the old notes, newest first, one card per day.
+ * Rows in a day share one rounded card (corners on the first/last row only)
+ * so a busy day reads as a unit. The AI and "+" buttons float bottom-right,
+ * inside thumb reach, above the tab bar.
  */
 
-import { useCallback, useMemo } from 'react';
-import { SectionList, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Alert, Linking, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EntryRow } from '../components/EntryRow';
-import { Card, Tap } from '../components/ui';
+import { Fabs } from '../components/Fabs';
+import { RecordIcon } from '../components/icons';
+import { RangeCard } from '../components/RangeCard';
+import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
+import { draftFromTrack, type Draft } from '../lib/draft';
 import { currentRangeKm, groupByDay, periodStart, rangeUsedById, summarize } from '../lib/entries';
+import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { formatKm } from '../lib/numbers';
+import { guessEnds } from '../lib/placeGuess';
+import { liveDistanceKm, startTracking, stopTracking, useTracking } from '../services/tracking';
+import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry } from '../types';
 
 type Section = { key: string; title: string; data: Entry[] };
@@ -27,12 +41,20 @@ type Section = { key: string; title: string; data: Entry[] };
 export function LogScreen({
   onAdd,
   onEdit,
+  onAi,
+  onTripRecorded,
 }: {
   onAdd: () => void;
   onEdit: (entry: Entry) => void;
+  onAi: () => void;
+  onTripRecorded: (
+    draft: Draft,
+    markers: { from?: boolean; to?: boolean; distance?: boolean },
+  ) => void;
 }) {
   const insets = useSafeAreaInsets();
   const entries = useLog((s) => s.entries);
+  const consumption = useSettings((s) => s.consumption);
   const now = useNow();
 
   const sections = useMemo<Section[]>(
@@ -40,6 +62,7 @@ export function LogScreen({
     [entries, now],
   );
   const used = useMemo(() => rangeUsedById(entries), [entries]);
+  const kmPerL = useMemo(() => effectiveKmPerLiter(entries, consumption), [entries, consumption]);
   const range = useMemo(() => currentRangeKm(entries), [entries]);
   // Open-ended so an entry stepped a few minutes into the future still counts.
   const week = useMemo(
@@ -57,25 +80,29 @@ export function LogScreen({
           index > 0 && styles.rowDivider,
         ]}
       >
-        <EntryRow entry={item} rangeUsed={used.get(item.id)} onPress={onEdit} />
+        <EntryRow
+          entry={item}
+          rangeUsed={used.get(item.id)}
+          estimate={
+            item.kind === 'trip'
+              ? tripFuelEstimate(item, entries, used.get(item.id), kmPerL)
+              : undefined
+          }
+          onPress={onEdit}
+        />
       </View>
     ),
-    [used, onEdit],
+    [used, onEdit, entries, kmPerL],
   );
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-      <Card style={styles.rangeCard}>
-        <View style={styles.rangeLine}>
-          <Text style={styles.rangeValue} adjustsFontSizeToFit numberOfLines={1}>
-            {range === undefined ? '—' : formatKm(range).replace(/ km$/, '')}
-          </Text>
-          <Text style={styles.rangeUnit}>km range left</Text>
-        </View>
-        <Text style={styles.week}>
-          This week: {formatKm(week.distanceKm)} driven · {formatKm(week.rangeUsedKm)} range used
-        </Text>
-      </Card>
+      <RangeCard
+        entries={entries}
+        range={range === undefined ? '—' : formatKm(range).replace(/ km$/, '')}
+        weekLine={`This week: ${formatKm(week.distanceKm)} driven · ${formatKm(week.rangeUsedKm)} range used`}
+      />
+      <Recorder entries={entries} now={now} onTripRecorded={onTripRecorded} />
     </View>
   );
 
@@ -101,13 +128,98 @@ export function LogScreen({
         }
         contentContainerStyle={styles.list}
       />
+      <Fabs onAi={onAi} onAdd={onAdd} />
+    </View>
+  );
+}
+
+function Recorder({
+  entries,
+  now,
+  onTripRecorded,
+}: {
+  entries: Entry[];
+  now: number;
+  onTripRecorded: (
+    draft: Draft,
+    markers: { from?: boolean; to?: boolean; distance?: boolean },
+  ) => void;
+}) {
+  const startedAt = useTracking((s) => s.startedAt);
+  const points = useTracking((s) => s.points);
+  const [busy, setBusy] = useState(false);
+
+  const start = async () => {
+    setBusy(true);
+    const r = await startTracking();
+    setBusy(false);
+    if (r === 'started') return;
+    if (r === 'no-background') {
+      Alert.alert(
+        'Allow location all the time',
+        'To keep recording with the screen off, set Location to "Allow all the time" for Fuel Log.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+    } else if (r === 'no-permission') {
+      Alert.alert('Location is off for Fuel Log', 'Allow location to record a trip.', [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => Linking.openSettings() },
+      ]);
+    } else {
+      Alert.alert('Could not start recording', 'Check that location is turned on, then try again.');
+    }
+  };
+
+  const stop = async () => {
+    setBusy(true);
+    const { track, distanceKm } = await stopTracking();
+    setBusy(false);
+    const names = guessEnds(entries, track);
+    onTripRecorded(draftFromTrack(track, distanceKm, Date.now(), names), {
+      from: !!names.from,
+      to: !!names.to,
+      distance: track.length > 1,
+    });
+  };
+
+  if (startedAt === null) {
+    return (
       <Tap
-        onPress={onAdd}
+        onPress={start}
+        disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Add entry"
-        style={styles.fab}
+        accessibilityLabel="Start trip, record the route with GPS"
+        style={styles.startBtn}
       >
-        <Text style={styles.fabGlyph}>+</Text>
+        <RecordIcon />
+        <Text style={styles.startText}>Start trip</Text>
+        <Text style={styles.startHint}>records the route with GPS</Text>
+      </Tap>
+    );
+  }
+
+  const minutes = Math.max(0, Math.floor((now - startedAt) / 60000));
+  return (
+    <View style={styles.live} accessibilityLiveRegion="polite">
+      <View style={styles.liveDot} />
+      <View style={styles.liveBody}>
+        <Text style={styles.liveTitle}>Recording trip</Text>
+        <Text style={styles.liveNums}>
+          {formatKm(liveDistanceKm(points))} · {minutes} min
+        </Text>
+      </View>
+      <Tap
+        onPress={stop}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel="Stop trip"
+        style={styles.stopBtn}
+      >
+        <View style={styles.stopSquare} />
+        <Text style={styles.stopText}>Stop</Text>
       </Tap>
     </View>
   );
@@ -116,23 +228,12 @@ export function LogScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   list: { paddingHorizontal: spacing.lg, paddingBottom: 120 },
-  header: { paddingBottom: spacing.sm },
-  rangeCard: { gap: spacing.sm, paddingVertical: spacing.xl },
-  rangeLine: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
-  rangeValue: {
-    color: colors.accent,
-    fontSize: 72,
-    lineHeight: 80,
-    fontWeight: '800',
-    letterSpacing: -2,
-    fontVariant: ['tabular-nums'],
-    flexShrink: 1,
-  },
-  rangeUnit: { color: colors.text, fontSize: 18, fontWeight: '600' },
-  week: { color: colors.muted, fontSize: 14, fontWeight: '500' },
+  header: { paddingBottom: spacing.sm, gap: spacing.md },
   sectionTitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
@@ -156,21 +257,71 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radius.lg,
     borderBottomRightRadius: radius.lg,
   },
-  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth },
+  rowDivider: { borderTopWidth: 1 },
   empty: { marginTop: spacing.xxl, paddingHorizontal: spacing.lg, gap: spacing.sm },
-  emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '700', textAlign: 'center' },
-  emptyText: { color: colors.muted, fontSize: 16, lineHeight: 23, textAlign: 'center' },
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.lg,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
+  emptyTitle: {
+    color: colors.text,
+    fontFamily: fonts.ui,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
   },
-  fabGlyph: { color: colors.onAccent, fontSize: 36, fontWeight: '500', marginTop: -3 },
+  emptyText: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 16,
+    lineHeight: 23,
+    textAlign: 'center',
+  },
+  startBtn: {
+    minHeight: TOUCH + 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+  },
+  startText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 16, fontWeight: '700' },
+  startHint: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  live: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    paddingLeft: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
+  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.danger },
+  liveBody: { flex: 1, gap: 2 },
+  liveTitle: { color: colors.text, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
+  liveNums: {
+    color: colors.accent,
+    fontFamily: fonts.num,
+    fontSize: 18,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  stopBtn: {
+    minHeight: TOUCH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+  },
+  stopSquare: { width: 12, height: 12, borderRadius: 2, backgroundColor: colors.onAccent },
+  stopText: { color: colors.onAccent, fontFamily: fonts.ui, fontSize: 16, fontWeight: '700' },
 });

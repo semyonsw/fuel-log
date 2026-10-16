@@ -28,11 +28,13 @@ type Props = {
   error?: string;
   placeholder?: string;
   accessory?: ReactNode;
+  /** "from GPS" when the name was guessed from the recorded route. */
+  marker?: string;
   onSubmitEditing?: () => void;
 };
 
 export const PlaceField = forwardRef<TextInput, Props>(function PlaceField(
-  { label, value, onChange, exclude, error, placeholder, accessory, onSubmitEditing },
+  { label, value, onChange, exclude, error, placeholder, accessory, marker, onSubmitEditing },
   ref,
 ) {
   const entries = useLog((s) => s.entries);
@@ -59,6 +61,7 @@ export const PlaceField = forwardRef<TextInput, Props>(function PlaceField(
         error={error}
         placeholder={placeholder}
         accessory={accessory}
+        marker={marker}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="next"

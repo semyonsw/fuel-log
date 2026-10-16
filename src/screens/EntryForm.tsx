@@ -1,14 +1,20 @@
 /**
  * Add / edit an entry: a full-screen sheet that slides up over the tabs.
  *
- * Layout is built for one hand in a parked car: the kind switch at the top,
- * the fields the user actually types in the middle (places first, because a
- * trip is mostly "where to where"), the time below them since it's usually
- * "now" already, and Save pinned at the bottom under the thumb.
+ * Layout is built for one hand in a parked car: the kind switch at the top
+ * with one line saying what that kind is for, the fields the user actually
+ * types in the middle (places first, because a trip is mostly "where to
+ * where"), the time below them since it's usually "now" already, and Save
+ * pinned at the bottom under the thumb, with one line above it saying what
+ * is still missing.
  *
  * The form holds a lib `Draft` (raw strings) so half-typed "33," survives;
- * `validateDraft` is the only place that turns it into an Entry. Errors stay
- * hidden until the first Save press so a fresh form isn't covered in red.
+ * `validateDraft` is the only place that turns it into an Entry. Field errors
+ * stay hidden until the first Save press so a fresh form isn't covered in red.
+ *
+ * A form can open pre-filled — from a GPS recording or from the AI's reading
+ * of a dashboard photo. Pre-filled fields carry a small marker ("from GPS",
+ * "from photo") until the user edits them; nothing is saved until Save.
  *
  * Keyboard: the window resizes (softwareKeyboardLayoutMode "resize"), but with
  * edge-to-edge that isn't guaranteed on every Android version, so the sheet
@@ -19,7 +25,6 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   BackHandler,
   KeyboardAvoidingView,
@@ -31,15 +36,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CloseIcon } from '../components/icons';
 import { PlaceField } from '../components/PlaceField';
-import { Button, Field, Segmented, Tap } from '../components/ui';
+import { RouteMap } from '../components/RouteMap';
+import { StationField } from '../components/StationField';
+import { Button, Chip, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
 import { WhenPicker } from '../components/WhenPicker';
-import { draftFromEntry, emptyDraft, validateDraft, type Draft } from '../lib/draft';
-import { currentRangeKm } from '../lib/entries';
+import { draftFromEntry, emptyDraft, saveHint, validateDraft, type Draft } from '../lib/draft';
+import { currentRangeKm, rangeUsedById } from '../lib/entries';
+import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
+import { trackDistanceKm } from '../lib/geo';
 import { newId } from '../lib/id';
-import { formatKm } from '../lib/numbers';
+import { formatAmd, formatKm, formatLiters, parseNumber } from '../lib/numbers';
+import { FUEL_GRADES } from '../lib/stations';
+import { formatDelta } from '../components/format';
+import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
-import { colors, radius, spacing, TOUCH } from '../theme';
+import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry, EntryKind } from '../types';
 
 const KINDS: { value: EntryKind; label: string }[] = [
@@ -48,20 +61,44 @@ const KINDS: { value: EntryKind; label: string }[] = [
   { value: 'refuel', label: 'Refuel' },
 ];
 
-export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () => void }) {
+const KIND_HINT: Record<EntryKind, string> = {
+  trip: 'Where you drove, and the range left after.',
+  reading: 'What the dashboard shows as range left right now.',
+  refuel: 'Fuel you bought: litres and the total paid.',
+};
+
+/** Where a pre-filled value came from, shown next to its label. */
+export type FormMarkers = Partial<Record<'range' | 'distance' | 'at' | 'from' | 'to', string>>;
+
+export function EntryForm({
+  editing,
+  initial,
+  initialMarkers,
+  onClose,
+}: {
+  editing?: Entry;
+  /** A pre-filled new entry (GPS recording, AI reading, "Add refuel"). */
+  initial?: Draft;
+  initialMarkers?: FormMarkers;
+  onClose: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const entries = useLog((s) => s.entries);
   const add = useLog((s) => s.add);
   const update = useLog((s) => s.update);
   const remove = useLog((s) => s.remove);
+  const consumption = useSettings((s) => s.consumption);
 
   const [id] = useState(() => editing?.id ?? newId());
   const [draft, setDraft] = useState<Draft>(() =>
-    editing ? draftFromEntry(editing) : emptyDraft('trip', Date.now()),
+    editing ? draftFromEntry(editing) : (initial ?? emptyDraft('trip', Date.now())),
   );
+  const [markers, setMarkers] = useState<FormMarkers>(initialMarkers ?? {});
   const [showErrors, setShowErrors] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const result = useMemo(() => validateDraft(draft, id), [draft, id]);
   const errors = showErrors && !result.ok ? result.errors : {};
+  const hint = result.ok ? '' : saveHint(result.errors);
 
   // A hint, not a pre-fill: what the dashboard said last time, so the user
   // has a sanity check for the number they're about to type.
@@ -70,9 +107,29 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
     [editing, entries],
   );
   const rangePlaceholder = lastRange === undefined ? 'km' : `last ${formatKm(lastRange)}`;
+  const typedRange = parseNumber(draft.range);
+  const liveUsed =
+    lastRange !== undefined && typedRange !== undefined && lastRange - typedRange > 0
+      ? lastRange - typedRange
+      : undefined;
 
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+  // The trip's approximate cost, live: the log as it would be with this trip saved.
+  const estimate = useMemo(() => {
+    if (!result.ok || result.entry.kind !== 'trip') return undefined;
+    const withThis = [...entries.filter((e) => e.id !== id), result.entry];
+    return tripFuelEstimate(
+      result.entry,
+      withThis,
+      rangeUsedById(withThis).get(id),
+      effectiveKmPerLiter(withThis, consumption),
+    );
+  }, [result, entries, id, consumption]);
+
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
+    // Editing a pre-filled field makes it the user's own value.
+    if (key in markers) setMarkers((m) => ({ ...m, [key]: undefined }));
+  };
 
   // Android back closes the form (the parent decides what "close" unmounts).
   useEffect(() => {
@@ -111,27 +168,14 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
     onClose();
   };
 
-  const confirmDelete = () => {
-    Alert.alert('Delete this entry?', 'This can’t be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          remove(id);
-          onClose();
-        },
-      },
-    ]);
-  };
-
-  /** Return trip: B → A with the stops in reverse. */
+  /** Return trip: B → A with the stops in reverse (and the route, if recorded). */
   const swap = () =>
     setDraft((d) => ({ ...d, from: d.to, to: d.from, stops: [...d.stops].reverse() }));
 
   const places = [draft.from, ...draft.stops, draft.to];
   /** Every place on the form except the one at `index`, for chip exclusion. */
   const othersThan = (index: number) => places.filter((p, i) => i !== index && p.trim() !== '');
+  const gpsKm = draft.track && draft.track.length > 1 ? trackDistanceKm(draft.track) : undefined;
 
   return (
     <Animated.View
@@ -153,7 +197,7 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
             accessibilityLabel="Close"
             style={styles.close}
           >
-            <Text style={styles.closeGlyph}>✕</Text>
+            <CloseIcon />
           </Tap>
           <Text style={styles.title}>{editing ? 'Edit entry' : 'New entry'}</Text>
           <View style={styles.close} />
@@ -161,6 +205,7 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
 
         <View style={styles.kindRow}>
           <Segmented options={KINDS} value={draft.kind} onChange={(k) => set('kind', k)} />
+          <Text style={styles.kindHint}>{KIND_HINT[draft.kind]}</Text>
         </View>
 
         <ScrollView
@@ -170,12 +215,23 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
         >
           {draft.kind === 'trip' ? (
             <>
+              {draft.track && draft.track.length > 1 ? (
+                <View style={styles.mapBlock}>
+                  <SectionLabel>Route</SectionLabel>
+                  <RouteMap track={draft.track} />
+                  {gpsKm !== undefined ? (
+                    <Text style={styles.muted}>GPS distance {formatKm(gpsKm)}</Text>
+                  ) : null}
+                </View>
+              ) : null}
+
               <PlaceField
                 label="From"
                 value={draft.from}
                 onChange={(v) => set('from', v)}
                 exclude={othersThan(0)}
                 error={errors.from}
+                marker={markers.from}
                 placeholder="e.g. 4micro"
                 onSubmitEditing={() =>
                   draft.stops.length > 0 ? stopRefs.current[0]?.focus() : toRef.current?.focus()
@@ -243,6 +299,7 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
                 onChange={(v) => set('to', v)}
                 exclude={othersThan(places.length - 1)}
                 error={errors.to}
+                marker={markers.to}
                 placeholder="e.g. charents school"
                 onSubmitEditing={() => distanceRef.current?.focus()}
               />
@@ -253,10 +310,12 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
                     ref={distanceRef}
                     label="Distance"
                     suffix="km"
+                    numeric
                     keyboardType="decimal-pad"
                     value={draft.distance}
                     onChangeText={(v) => set('distance', v)}
                     error={errors.distance}
+                    marker={markers.distance}
                     placeholder="22,5"
                   />
                 </View>
@@ -264,26 +323,44 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
                   <Field
                     label="Range left"
                     suffix="km"
+                    numeric
                     keyboardType="decimal-pad"
                     value={draft.range}
                     onChangeText={(v) => set('range', v)}
                     error={errors.range}
+                    marker={markers.range}
                     placeholder={rangePlaceholder}
                   />
                 </View>
               </View>
+              {estimate ? (
+                <Text style={styles.estimate}>
+                  ≈ {formatLiters(Math.round(estimate.liters * 10) / 10)} · ≈{' '}
+                  {formatAmd(estimate.amd)} for this trip
+                </Text>
+              ) : null}
             </>
           ) : draft.kind === 'reading' ? (
-            <Field
-              label="Range left"
-              suffix="km"
-              keyboardType="decimal-pad"
-              value={draft.range}
-              onChangeText={(v) => set('range', v)}
-              error={errors.range}
-              placeholder={rangePlaceholder}
-              style={styles.bigInput}
-            />
+            <View style={styles.bigBlock}>
+              <Field
+                label="Range left"
+                suffix="km"
+                numeric
+                big
+                keyboardType="decimal-pad"
+                value={draft.range}
+                onChangeText={(v) => set('range', v)}
+                error={errors.range}
+                marker={markers.range}
+                placeholder={rangePlaceholder}
+                autoFocus={!initial}
+              />
+              {liveUsed !== undefined ? (
+                <Text style={styles.live}>
+                  <Text style={styles.liveNum}>−{formatDelta(liveUsed)}</Text> since last reading
+                </Text>
+              ) : null}
+            </View>
           ) : (
             <>
               <View style={styles.pair}>
@@ -291,6 +368,7 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
                   <Field
                     label="Liters"
                     suffix="L"
+                    numeric
                     keyboardType="decimal-pad"
                     value={draft.liters}
                     onChangeText={(v) => set('liters', v)}
@@ -302,6 +380,7 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
                   <Field
                     label="Total paid"
                     suffix="AMD"
+                    numeric
                     keyboardType="number-pad"
                     value={draft.price}
                     onChangeText={(v) => set('price', v)}
@@ -313,17 +392,54 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
               <Field
                 label="Range after (optional)"
                 suffix="km"
+                numeric
                 keyboardType="decimal-pad"
                 value={draft.range}
                 onChangeText={(v) => set('range', v)}
                 error={errors.range}
+                marker={markers.range}
                 placeholder="km"
               />
+              <StationField
+                value={draft.station}
+                onChange={(v) => set('station', v)}
+                onPick={(name, address) =>
+                  setDraft((d) => ({ ...d, station: name, address: address ?? d.address }))
+                }
+              />
+              <Field
+                label="Address (optional)"
+                value={draft.address}
+                onChangeText={(v) => set('address', v)}
+                placeholder="e.g. Komitas 5"
+                autoCapitalize="words"
+              />
+              <View style={styles.gradeBlock}>
+                <SectionLabel>Fuel grade (optional)</SectionLabel>
+                <View style={styles.grades}>
+                  {FUEL_GRADES.map((g) => (
+                    <Chip
+                      key={g.value}
+                      label={g.label}
+                      active={draft.grade === g.value}
+                      onPress={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          grade: d.grade === g.value ? undefined : g.value,
+                        }))
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
             </>
           )}
 
           <View style={styles.divider} />
-          <WhenPicker at={draft.at} onChange={(at) => set('at', at)} />
+          <View>
+            {markers.at ? <Text style={styles.atMarker}>{markers.at}</Text> : null}
+            <WhenPicker at={draft.at} onChange={(at) => set('at', at)} />
+          </View>
           <View style={styles.divider} />
 
           <Field
@@ -337,16 +453,33 @@ export function EntryForm({ editing, onClose }: { editing?: Entry; onClose: () =
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-          {editing ? (
-            <View style={styles.deleteWrap}>
-              <Button label="Delete" variant="danger" onPress={confirmDelete} />
+          {hint ? <Text style={styles.saveHint}>{hint}</Text> : null}
+          <View style={styles.footerRow}>
+            {editing ? (
+              <View style={styles.deleteWrap}>
+                <Button label="Delete" variant="danger" onPress={() => setConfirmDelete(true)} />
+              </View>
+            ) : null}
+            <View style={styles.flex}>
+              <Button label={editing ? 'Save changes' : 'Save'} onPress={save} dim={!result.ok} />
             </View>
-          ) : null}
-          <View style={styles.flex}>
-            <Button label={editing ? 'Save changes' : 'Save'} onPress={save} dim={!result.ok} />
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <ConfirmSheet
+        visible={confirmDelete}
+        title="Delete this entry?"
+        body="This can’t be undone."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          remove(id);
+          onClose();
+        }}
+      />
     </Animated.View>
   );
 }
@@ -361,12 +494,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   close: { width: TOUCH, height: TOUCH, alignItems: 'center', justifyContent: 'center' },
-  closeGlyph: { color: colors.text, fontSize: 22 },
-  title: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  title: { color: colors.text, fontFamily: fonts.ui, fontSize: 18, fontWeight: '700' },
   kindRow: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  kindHint: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginTop: spacing.sm,
+    marginHorizontal: spacing.xs,
+  },
   content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
   pair: { flexDirection: 'row', gap: spacing.md },
-  bigInput: { fontSize: 32, fontWeight: '700' },
+  mapBlock: { gap: spacing.sm },
+  muted: { color: colors.muted, fontFamily: fonts.num, fontSize: 13, fontWeight: '500' },
+  estimate: {
+    color: colors.muted,
+    fontFamily: fonts.num,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: -spacing.sm,
+  },
+  bigBlock: { gap: spacing.sm },
+  live: {
+    color: colors.accent,
+    fontFamily: fonts.ui,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  liveNum: { fontFamily: fonts.num, fontWeight: '800' },
   tripActions: { flexDirection: 'row', gap: spacing.sm },
   dashed: {
     minHeight: TOUCH,
@@ -378,18 +536,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
-  dashedText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  dashedText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
   removeStop: { paddingHorizontal: spacing.xs },
-  removeStopText: { color: colors.danger, fontSize: 13, fontWeight: '700' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  removeStopText: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '700' },
+  gradeBlock: { gap: spacing.sm },
+  grades: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  atMarker: {
+    position: 'absolute',
+    left: 52,
+    top: 0,
+    zIndex: 1,
+    color: colors.accent,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
+  divider: { height: 1, backgroundColor: colors.border },
   footer: {
-    flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
+  },
+  footerRow: { flexDirection: 'row', gap: spacing.md },
+  saveHint: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    paddingHorizontal: spacing.xs,
   },
   deleteWrap: { width: 120 },
 });

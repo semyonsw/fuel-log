@@ -28,8 +28,21 @@ export interface TripEntry extends EntryBase {
   /** Places passed through, in order. */
   stops: string[];
   to: string;
-  /** Trip distance from the odometer/trip meter. */
+  /** Trip distance from the odometer/trip meter, or pre-filled from the GPS track. */
   distanceKm?: number;
+  /**
+   * The recorded GPS route, already filtered and simplified (see lib/geo), so
+   * it is small enough for AsyncStorage. Absent on trips logged by hand and on
+   * every entry written before tracking existed.
+   */
+  track?: TrackPoint[];
+}
+
+/** One GPS fix: degrees, and epoch ms. */
+export interface TrackPoint {
+  lat: number;
+  lon: number;
+  t: number;
 }
 
 export interface ReadingEntry extends EntryBase {
@@ -42,6 +55,14 @@ export interface RefuelEntry extends EntryBase {
   liters: number;
   /** Total paid at the station, AMD. */
   priceAmd: number;
+  /** Fuel company, e.g. "Max Petrol". Optional, as typed. */
+  station?: string;
+  /** Where the station is, free text. Optional. */
+  address?: string;
+  grade?: FuelGrade;
 }
+
+/** The pump grades sold in Armenia; the Sentra's manual asks for regular. */
+export type FuelGrade = '92' | '95' | '98' | 'diesel';
 
 export type Entry = TripEntry | ReadingEntry | RefuelEntry;

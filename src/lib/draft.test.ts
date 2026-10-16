@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { draftFromEntry, emptyDraft, validateDraft, type Draft } from './draft';
+import { draftFromEntry, emptyDraft, saveHint, validateDraft, type Draft } from './draft';
 import { at, reading, refuel, trip } from './entries.fixtures';
 
 /**
@@ -26,6 +26,8 @@ describe('emptyDraft', () => {
       range: '',
       liters: '',
       price: '',
+      station: '',
+      address: '',
       note: '',
     });
   });
@@ -204,5 +206,20 @@ describe('validateDraft — refuel', () => {
       'x',
     );
     expect(withRange.ok && withRange.entry.rangeKm).toBe(420);
+  });
+});
+
+describe('saveHint', () => {
+  it('lists what is missing, then what is unreadable', () => {
+    expect(
+      saveHint({
+        from: 'Where did you start?',
+        to: 'Where did you end?',
+        distance: 'Not a number',
+      }),
+    ).toBe('To save, fill in: From, To · Check: Distance');
+    expect(saveHint({ liters: 'Enter liters' })).toBe('To save, fill in: Liters');
+    expect(saveHint({ range: 'Not a number' })).toBe('Check: Range left');
+    expect(saveHint({})).toBe('');
   });
 });

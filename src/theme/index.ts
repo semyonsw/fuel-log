@@ -13,10 +13,16 @@ export const colors = {
   surface: '#151918',
   surface2: '#1E2422',
   border: '#2A312E',
+  /** Grid dots, tick marks and chevrons: structure that should barely show. */
+  faint: '#3A433F',
   text: '#F2F5F3',
   muted: '#8A958F',
   accent: '#F5A524',
   accentSoft: 'rgba(245,165,36,0.15)',
+  /** The dimmer amber of the range sparkline, so its last point can stand out. */
+  accentDim: '#B5781A',
+  /** Wash behind refuel rows: just enough to find fill-ups when scrolling. */
+  accentWash: 'rgba(245,165,36,0.05)',
   /** Text drawn ON the amber fill; amber is too light for white text. */
   onAccent: '#1A1203',
   danger: '#F0524F',
@@ -24,6 +30,15 @@ export const colors = {
   success: '#3DDC84',
   successSoft: 'rgba(61,220,132,0.14)',
 } as const;
+
+/**
+ * Inter for words, JetBrains Mono for numbers — the "Night Cluster" pairing:
+ * a monospaced figure is what a dashboard shows, and digits that keep their
+ * width stop columns of km from jittering. Both are embedded natively by the
+ * expo-font plugin (app.json) with every weight used, so `fontWeight` picks
+ * the real cut instead of a synthesised bold.
+ */
+export const fonts = { ui: 'Inter', num: 'JetBrains Mono' } as const;
 
 export const spacing = {
   xs: 4,
@@ -46,10 +61,16 @@ export const radius = {
 export const TOUCH = 48;
 
 export const type = {
-  hero: { fontSize: 64, fontWeight: '800', letterSpacing: -1.5 },
-  title: { fontSize: 22, fontWeight: '700' },
-  body: { fontSize: 16, fontWeight: '400' },
-  bodyStrong: { fontSize: 16, fontWeight: '600' },
-  small: { fontSize: 13, fontWeight: '500' },
-  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  hero: { fontFamily: fonts.num, fontSize: 64, fontWeight: '800', letterSpacing: -1.5 },
+  title: { fontFamily: fonts.ui, fontSize: 22, fontWeight: '700' },
+  body: { fontFamily: fonts.ui, fontSize: 16, fontWeight: '400' },
+  bodyStrong: { fontFamily: fonts.ui, fontSize: 16, fontWeight: '600' },
+  small: { fontFamily: fonts.ui, fontSize: 13, fontWeight: '500' },
+  label: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
 } as const;

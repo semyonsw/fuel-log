@@ -10,7 +10,7 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing } from '../theme';
+import { colors, fonts, spacing } from '../theme';
 
 export function RouteLine({ from, stops, to }: { from: string; stops: string[]; to: string }) {
   const points: { name: string; role: 'from' | 'stop' | 'to' }[] = [
@@ -43,7 +43,12 @@ export function RouteLine({ from, stops, to }: { from: string; stops: string[]; 
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 4 },
   point: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, maxWidth: '100%' },
-  arrow: { color: colors.muted, fontSize: 14, marginHorizontal: spacing.xs + 2 },
+  arrow: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 14,
+    marginHorizontal: spacing.xs + 2,
+  },
   dot: {
     width: 6,
     height: 6,
@@ -60,7 +65,14 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   dotTo: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.accent },
-  name: { color: colors.text, fontSize: 16, fontWeight: '600', flexShrink: 1 },
+  name: {
+    color: colors.text,
+    fontFamily: fonts.ui,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
   nameStop: { color: colors.muted, fontWeight: '500', fontSize: 15 },
-  empty: { color: colors.muted, fontSize: 16 },
+  empty: { color: colors.muted, fontFamily: fonts.ui, fontSize: 16 },
 });
