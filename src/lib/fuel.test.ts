@@ -12,6 +12,7 @@ import {
   kmPerLiterFromRefuels,
   latestPricePerLiter,
   shiftDay,
+  tripEstimates,
   tripFuelEstimate,
 } from './fuel';
 import { formatAmd } from './numbers';
@@ -233,5 +234,27 @@ describe('calculate', () => {
     expect(
       calculate({ ...base, entries: [refuel('f', 0, 30, 15000)], consumption: '8' }),
     ).toMatchObject({ ok: true, result: 4000 });
+  });
+});
+
+describe('tripEstimates', () => {
+  it('matches tripFuelEstimate for every trip', () => {
+    const log = [
+      reading('r0', at(10, 8, 0), 50),
+      refuel('f', at(10, 9, 0), 30, 15000, 290),
+      trip('a', at(9, 9, 0), 'x', 'y', { distanceKm: 10 }), // before any refuel
+      trip('b', at(11, 9, 0), 'x', 'y', { distanceKm: 16, rangeKm: 270 }),
+      trip('c', at(11, 10, 0), 'y', 'x', { rangeKm: 262 }), // range used only
+      refuel('g', at(12, 9, 0), 10, 6000),
+      trip('d', at(12, 9, 0), 'x', 'z', { distanceKm: 8 }), // same instant as refuel g
+    ];
+    const used = rangeUsedById(log);
+    const all = tripEstimates(log, used, 8);
+    for (const t of log) {
+      if (t.kind !== 'trip') continue;
+      expect(all.get(t.id)).toEqual(tripFuelEstimate(t, log, used.get(t.id), 8));
+    }
+    expect(all.has('a')).toBe(false);
+    expect(all.get('d')!.amd).toBe(600);
   });
 });

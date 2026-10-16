@@ -49,20 +49,37 @@ export const ERROR_TEXT: Record<GeminiError, string> = {
 
 export type ChatResult = { ok: true; reply: ChatReply } | { ok: false; error: GeminiError };
 
+type Content = {
+  role: 'user' | 'model';
+  parts: ({ text: string } | { inline_data: { mime_type: string; data: string } })[];
+};
+
+/**
+ * Turns → contents, with neighbours of the same role merged. A failed reply is
+ * not sent back, which can leave two user turns in a row; the API expects the
+ * conversation to alternate, so they become one turn with all their parts.
+ */
+export function mergeTurns(turns: Turn[]): Content[] {
+  const out: Content[] = [];
+  for (const t of turns) {
+    const parts: Content['parts'] = [
+      ...(t.text ? [{ text: t.text }] : []),
+      ...(t.imageBase64 ? [{ inline_data: { mime_type: 'image/jpeg', data: t.imageBase64 } }] : []),
+    ];
+    if (parts.length === 0) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === t.role) last.parts.push(...parts);
+    else out.push({ role: t.role, parts });
+  }
+  return out;
+}
+
 export function buildRequest(turns: Turn[], logJson: string) {
   return {
     systemInstruction: {
       parts: [{ text: `${SYSTEM_PROMPT}\n\nThe user's log (JSON, oldest first):\n${logJson}` }],
     },
-    contents: turns.map((t) => ({
-      role: t.role,
-      parts: [
-        ...(t.text ? [{ text: t.text }] : []),
-        ...(t.imageBase64
-          ? [{ inline_data: { mime_type: 'image/jpeg', data: t.imageBase64 } }]
-          : []),
-      ],
-    })),
+    contents: mergeTurns(turns),
     generationConfig: { responseMimeType: 'application/json', responseSchema: REPLY_SCHEMA },
   };
 }

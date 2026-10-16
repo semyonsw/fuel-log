@@ -353,7 +353,7 @@ export function EntryForm({
                 error={errors.range}
                 marker={markers.range}
                 placeholder={rangePlaceholder}
-                autoFocus={!initial}
+                autoFocus={!editing && !initial}
               />
               {liveUsed !== undefined ? (
                 <Text style={styles.live}>

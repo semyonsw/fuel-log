@@ -111,6 +111,32 @@ export function tripFuelEstimate(
   return fuelCost(km, kmPerL, latestPricePerLiter(entries, trip.at));
 }
 
+/**
+ * Every trip's estimate at once, for the Log: one pass in time order keeps
+ * the price of the latest refuel so far, instead of re-sorting the log per row.
+ * Same rules as `tripFuelEstimate`.
+ */
+export function tripEstimates(
+  entries: Entry[],
+  used: Map<string, number>,
+  kmPerL: number | undefined,
+): Map<string, FuelResult> {
+  const out = new Map<string, FuelResult>();
+  let price: number | undefined;
+  // Refuels sort before trips at the same instant, matching `at <= trip.at`.
+  const asc = [...entries].sort(
+    (a, b) => a.at - b.at || Number(b.kind === 'refuel') - Number(a.kind === 'refuel'),
+  );
+  for (const e of asc) {
+    if (e.kind === 'refuel' && e.liters > 0) price = e.priceAmd / e.liters;
+    if (e.kind !== 'trip') continue;
+    const km = e.distanceKm !== undefined && e.distanceKm > 0 ? e.distanceKm : used.get(e.id);
+    const r = fuelCost(km, kmPerL, price);
+    if (r) out.set(e.id, r);
+  }
+  return out;
+}
+
 /** Local midnight of the day containing `at`, moved `days` days, via Date so DST stays whole. */
 export function shiftDay(at: number, days: number): number {
   const d = new Date(at);

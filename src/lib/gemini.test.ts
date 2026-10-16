@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildRequest, interpret, listModels, sendChat, type Fetch } from './gemini';
+import { buildRequest, interpret, listModels, mergeTurns, sendChat, type Fetch } from './gemini';
 
 /** Every test runs against a fake fetch: no request ever leaves the machine. */
 
@@ -119,5 +119,26 @@ describe('listModels', () => {
     const f = respond(200, '{"models":[{"name":"models/gemini-3.8-flash"}]}');
     expect(await listModels('k', f)).toEqual([{ name: 'models/gemini-3.8-flash' }]);
     expect(await listModels('k', respond(403, '{}'))).toBeUndefined();
+  });
+});
+
+describe('mergeTurns', () => {
+  it('merges neighbours of the same role and drops empty turns', () => {
+    expect(
+      mergeTurns([
+        { role: 'user', text: 'first' },
+        { role: 'user', text: '', imageBase64: 'BB' },
+        { role: 'user', text: '' },
+        { role: 'model', text: 'ok' },
+        { role: 'user', text: 'again' },
+      ]),
+    ).toEqual([
+      {
+        role: 'user',
+        parts: [{ text: 'first' }, { inline_data: { mime_type: 'image/jpeg', data: 'BB' } }],
+      },
+      { role: 'model', parts: [{ text: 'ok' }] },
+      { role: 'user', parts: [{ text: 'again' }] },
+    ]);
   });
 });

@@ -27,7 +27,7 @@ import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
 import { draftFromTrack, type Draft } from '../lib/draft';
 import { currentRangeKm, groupByDay, periodStart, rangeUsedById, summarize } from '../lib/entries';
-import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
+import { effectiveKmPerLiter, tripEstimates } from '../lib/fuel';
 import { formatKm } from '../lib/numbers';
 import { guessEnds } from '../lib/placeGuess';
 import { liveDistanceKm, startTracking, stopTracking, useTracking } from '../services/tracking';
@@ -63,6 +63,7 @@ export function LogScreen({
   );
   const used = useMemo(() => rangeUsedById(entries), [entries]);
   const kmPerL = useMemo(() => effectiveKmPerLiter(entries, consumption), [entries, consumption]);
+  const estimates = useMemo(() => tripEstimates(entries, used, kmPerL), [entries, used, kmPerL]);
   const range = useMemo(() => currentRangeKm(entries), [entries]);
   // Open-ended so an entry stepped a few minutes into the future still counts.
   const week = useMemo(
@@ -83,16 +84,12 @@ export function LogScreen({
         <EntryRow
           entry={item}
           rangeUsed={used.get(item.id)}
-          estimate={
-            item.kind === 'trip'
-              ? tripFuelEstimate(item, entries, used.get(item.id), kmPerL)
-              : undefined
-          }
+          estimate={estimates.get(item.id)}
           onPress={onEdit}
         />
       </View>
     ),
-    [used, onEdit, entries, kmPerL],
+    [used, onEdit, estimates],
   );
 
   const header = (
