@@ -1,0 +1,29 @@
+# The suite, on every push and every pull request.
+#
+# Deliberately minimal: no matrix, no Android build. The app is Android-only and
+# sideloaded from one machine (see CLAUDE.md), so a gradle job here would build
+# nothing that ships. This workflow guards the pure layer — `src/lib/`, the
+# store, the types — which is where the app's decisions live.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `ci`, not `install`: the locked tree is the tree.
+      - run: npm ci
+
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
