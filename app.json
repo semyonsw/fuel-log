@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Fuel Log",
+    "slug": "fuel-log",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["android"],
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0D0C",
+    "primaryColor": "#F5A524",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0D0C"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.semyonsw.fuellog",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B0D0C"
+      },
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": ["VIBRATE"]
+    },
+    "plugins": ["./plugins/withReleaseSigning"]
+  }
+}
