@@ -3,13 +3,13 @@
  *
  * ── A CHAT, NOT A FORM ───────────────────────────────────────────────────
  *
- * The user sends a photo (camera or gallery) and/or text. Gemini answers in
- * the thread; when the turn is about a dashboard photo, its numbers come
- * back as a reading card under the answer. The card is editable three ways —
- * correct it by chatting ("that's the odometer"), nudge with −1 −0.1 +0.1 +1,
- * or tap the number and type it — and its "Insert into log" opens a new
- * entry form pre-filled with those values (marked "from photo"). Nothing is
- * saved until Save is pressed in the form, which stays fully editable.
+ * The user says what happened ("bought 15 L for 9000 AMD, fuel was 15 km,
+ * now shows 250 km") or sends a dashboard photo. Gemini answers in the thread
+ * and, when there is something to log, proposes the entries it implies as
+ * cards under the answer. Every value on a card is editable three ways —
+ * correct it by chatting, nudge it (−1 −0.1 +0.1 +1), or tap and type — and
+ * one Approve saves all of them to the log, through the same validation as
+ * the form. Saved entries stay editable in the log like any other.
  *
  * ── HISTORY ──────────────────────────────────────────────────────────────
  *
@@ -50,25 +50,28 @@ import {
   TrashIcon,
   ChevronIcon,
 } from '../components/icons';
-import { Button, ConfirmSheet, Segmented, Sheet, Tap } from '../components/ui';
+import * as Haptics from 'expo-haptics';
+
+import { Button, Chip, ConfirmSheet, Segmented, Sheet, Tap } from '../components/ui';
 import {
   appendMessage,
   newChat,
-  setReading,
   sortChats,
+  updateMessage,
   type Chat,
   type ChatMessage,
 } from '../lib/chat';
 import {
   logContext,
+  MAX_LITERS,
+  MAX_PRICE_AMD,
   MAX_RANGE_KM,
   MAX_TRIP_KM,
-  mergePhotoIntoDraft,
   nudge,
-  suggestedKind,
-  type ClusterReading,
-} from '../lib/cluster';
-import { emptyDraft, type Draft } from '../lib/draft';
+  parseClock,
+  proposalsToEntries,
+  type Proposal,
+} from '../lib/assistant';
 import { dayKey, dayLabel, formatTime } from '../lib/entries';
 import { ERROR_TEXT, listModels, sendChat, type Turn } from '../lib/gemini';
 import { newId } from '../lib/id';
@@ -79,7 +82,8 @@ import {
   resolveModel,
   type GeminiModel,
 } from '../lib/models';
-import { parseNumber } from '../lib/numbers';
+import { formatAmd, parseNumber } from '../lib/numbers';
+import { FUEL_GRADES } from '../lib/stations';
 import { takePhoto, type Photo } from '../services/photo';
 import { saveApiKey } from '../services/secrets';
 import { useChats } from '../state/chats';
@@ -87,21 +91,21 @@ import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { EntryKind } from '../types';
-import type { FormMarkers } from './EntryForm';
 
-const PHOTO_MARK = 'from photo';
+const KIND_TITLE: Record<EntryKind, string> = {
+  reading: 'Range reading',
+  trip: 'Trip',
+  refuel: 'Refuel',
+};
 
-export function ChatScreen({
-  onClose,
-  onInsert,
-}: {
-  onClose: () => void;
-  onInsert: (draft: Draft, markers: FormMarkers) => void;
-}) {
+export function ChatScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const chats = useChats((s) => s.chats);
   const putChat = useChats((s) => s.put);
   const removeChat = useChats((s) => s.remove);
+  const addEntry = useLog((s) => s.add);
+  /** Per message: why Approve could not save, one line per card. */
+  const [problems, setProblems] = useState<Record<string, (string | undefined)[]>>({});
   const apiKey = useSettings((s) => s.apiKey);
   const model = resolveModel(useSettings((s) => s.geminiModel));
 
@@ -192,7 +196,10 @@ export function ChatScreen({
                   : ''),
               imageBase64: photos.current.get(m.id)?.base64,
             }
-          : { role: 'model', text: JSON.stringify({ reply: m.text, reading: m.reading ?? null }) },
+          : {
+              role: 'model',
+              text: JSON.stringify({ reply: m.text, entries: m.proposals ?? [] }),
+            },
       );
 
     const ctrl = new AbortController();
@@ -213,28 +220,38 @@ export function ChatScreen({
       ? {
           id: newId(),
           role: 'model',
-          text: res.reply.reply || (res.reply.reading ? 'Here is what I read:' : ''),
+          text: res.reply.reply || (res.reply.entries.length ? 'Check and approve:' : ''),
           at: Date.now(),
-          reading: res.reply.reading,
+          ...(res.reply.entries.length ? { proposals: res.reply.entries } : {}),
+          ...(res.reply.confidence ? { confidence: res.reply.confidence } : {}),
         }
       : { id: newId(), role: 'model', text: ERROR_TEXT[res.error], at: Date.now(), error: true };
     putChat(appendMessage(latest, reply));
     if (!res.ok && res.error === 'bad-key') setKeySheet(true);
   };
 
-  const editReading = (messageId: string, r: ClusterReading) => {
-    const c = useChats.getState().chats.find((x) => x.id === chatId);
-    if (c) putChat(setReading(c, messageId, r));
+  const currentChat = () => useChats.getState().chats.find((x) => x.id === chatId);
+
+  const editProposals = (messageId: string, proposals: Proposal[]) => {
+    const c = currentChat();
+    if (c) putChat(updateMessage(c, messageId, { proposals }));
+    setProblems((p) => ({ ...p, [messageId]: [] }));
   };
 
-  const insert = (r: ClusterReading, kind: EntryKind) => {
-    const now = Date.now();
-    const { draft, filled } = mergePhotoIntoDraft(emptyDraft(kind, now), r, now);
-    const markers: FormMarkers = {};
-    if (filled.range) markers.range = PHOTO_MARK;
-    if (filled.distance) markers.distance = PHOTO_MARK;
-    if (filled.at) markers.at = PHOTO_MARK;
-    onInsert(draft, markers);
+  /** Approve: all cards into the log at once, or nothing and say why. */
+  const approve = (messageId: string) => {
+    const c = currentChat();
+    const msg = c?.messages.find((m) => m.id === messageId);
+    if (!c || !msg?.proposals?.length || msg.savedIds) return;
+    const r = proposalsToEntries(msg.proposals, Date.now(), newId);
+    if (!r.ok) {
+      setProblems((p) => ({ ...p, [messageId]: r.problems }));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return;
+    }
+    r.entries.forEach(addEntry);
+    putChat(updateMessage(c, messageId, { savedIds: r.entries.map((e) => e.id) }));
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
 
   return (
@@ -310,11 +327,12 @@ export function ChatScreen({
                     <SparklesIcon size={30} color={colors.accent} />
                   </View>
                   <Text style={styles.emptyTitle}>
-                    Ask about your log, or send a dashboard photo
+                    Tell me what happened, or send a dashboard photo
                   </Text>
                   <Text style={styles.emptyText}>
-                    A photo of the instrument cluster comes back as range left, trip distance and
-                    time, ready to insert as an entry.
+                    For example: “I bought 15 L for 9000 AMD, my fuel was 15 km, now it shows 250
+                    km.” You get the entries to check, then one Approve saves them. You can also ask
+                    about your log.
                   </Text>
                   {!apiKey ? (
                     <Button label="Add your Gemini API key" onPress={() => setKeySheet(true)} />
@@ -325,8 +343,9 @@ export function ChatScreen({
                 <Bubble
                   msg={item}
                   photo={photos.current.get(item.id)}
-                  onEditReading={(r) => editReading(item.id, r)}
-                  onInsert={insert}
+                  problems={problems[item.id]}
+                  onEdit={(p) => editProposals(item.id, p)}
+                  onApprove={() => approve(item.id)}
                 />
               )}
               ListFooterComponent={
@@ -432,13 +451,15 @@ export function ChatScreen({
 function Bubble({
   msg,
   photo,
-  onEditReading,
-  onInsert,
+  problems,
+  onEdit,
+  onApprove,
 }: {
   msg: ChatMessage;
   photo?: Photo;
-  onEditReading: (r: ClusterReading) => void;
-  onInsert: (r: ClusterReading, kind: EntryKind) => void;
+  problems?: (string | undefined)[];
+  onEdit: (p: Proposal[]) => void;
+  onApprove: () => void;
 }) {
   const mine = msg.role === 'user';
   return (
@@ -462,127 +483,318 @@ function Bubble({
         ) : null}
         <Text style={styles.msgTime}>{formatTime(msg.at)}</Text>
       </View>
-      {msg.reading ? (
-        <ReadingCard reading={msg.reading} onChange={onEditReading} onInsert={onInsert} />
+      {msg.proposals?.length ? (
+        <Proposals
+          proposals={msg.proposals}
+          saved={!!msg.savedIds}
+          lowConfidence={msg.confidence === 'low'}
+          problems={problems}
+          onChange={onEdit}
+          onApprove={onApprove}
+        />
       ) : null}
     </View>
   );
 }
 
-/** The editable reading under an AI answer, and the button that turns it into an entry. */
-function ReadingCard({
-  reading,
+/**
+ * The entries an answer proposes, each as an editable card, and one Approve
+ * for all of them. After saving, the cards stay as a read-only record.
+ */
+function Proposals({
+  proposals,
+  saved,
+  lowConfidence,
+  problems,
   onChange,
-  onInsert,
+  onApprove,
 }: {
-  reading: ClusterReading;
-  onChange: (r: ClusterReading) => void;
-  onInsert: (r: ClusterReading, kind: EntryKind) => void;
+  proposals: Proposal[];
+  saved: boolean;
+  lowConfidence: boolean;
+  problems?: (string | undefined)[];
+  onChange: (p: Proposal[]) => void;
+  onApprove: () => void;
 }) {
-  const [kind, setKind] = useState<EntryKind>(() => suggestedKind(reading));
-  const [clock, setClock] = useState(reading.clock ?? '');
-  useEffect(() => setClock(reading.clock ?? ''), [reading.clock]);
-  const clockOk = clock.trim() === '' || /^([01]?\d|2[0-3]):[0-5]\d$/.test(clock.trim());
+  const edit = (i: number, patch: Partial<Proposal>) =>
+    onChange(proposals.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const remove = (i: number) => onChange(proposals.filter((_, j) => j !== i));
 
   return (
-    <View style={styles.card}>
-      <View style={styles.cardHead}>
-        <Text style={styles.cardTitle}>Reading</Text>
-        <Text style={[styles.conf, reading.confidence === 'low' && { color: colors.danger }]}>
-          {reading.confidence} confidence
-        </Text>
-      </View>
-      {reading.confidence === 'low' ? (
-        <Text style={styles.cardWarn}>
-          Gemini was not sure. Check the numbers before inserting.
-        </Text>
+    <View style={[styles.card, saved && styles.cardSaved]}>
+      {lowConfidence && !saved ? (
+        <Text style={styles.cardWarn}>Gemini was not sure about the photo. Check the numbers.</Text>
       ) : null}
-      {reading.notes ? <Text style={styles.cardNote}>{reading.notes}</Text> : null}
+      {proposals.map((p, i) => (
+        <View key={i} style={[styles.prop, i > 0 && styles.propDivider]}>
+          <View style={styles.cardHead}>
+            <Text style={styles.cardTitle}>
+              {proposals.length > 1 ? `${i + 1}. ` : ''}
+              {KIND_TITLE[p.kind]}
+            </Text>
+            {!saved && proposals.length > 1 ? (
+              <Tap
+                onPress={() => remove(i)}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${KIND_TITLE[p.kind]}`}
+                hitSlop={10}
+              >
+                <Text style={styles.removeText}>Remove</Text>
+              </Tap>
+            ) : null}
+          </View>
+          {!saved ? (
+            <Segmented
+              options={[
+                { value: 'trip' as EntryKind, label: 'Trip' },
+                { value: 'reading' as EntryKind, label: 'Range' },
+                { value: 'refuel' as EntryKind, label: 'Refuel' },
+              ]}
+              value={p.kind}
+              onChange={(kind) => edit(i, { kind })}
+              dark
+            />
+          ) : null}
+          <ProposalFields p={p} locked={saved} onEdit={(patch) => edit(i, patch)} />
+          {problems?.[i] ? <Text style={styles.problem}>{problems[i]}</Text> : null}
+        </View>
+      ))}
+      {saved ? (
+        <Text style={styles.savedText}>
+          ✓ Saved to the log{proposals.length > 1 ? ` (${proposals.length} entries)` : ''}. Edit
+          them there any time.
+        </Text>
+      ) : (
+        <>
+          <Button
+            label={proposals.length > 1 ? `Approve ${proposals.length} entries` : 'Approve'}
+            onPress={onApprove}
+          />
+          <Text style={styles.cardFoot}>Approve saves these to the log exactly as shown.</Text>
+        </>
+      )}
+    </View>
+  );
+}
 
-      <NumberRow
-        label="Range left"
-        value={reading.rangeKm}
-        max={MAX_RANGE_KM}
-        onChange={(v) => onChange({ ...reading, rangeKm: v })}
-      />
-      <NumberRow
-        label="Trip distance"
-        value={reading.tripKm}
-        max={MAX_TRIP_KM}
-        onChange={(v) => onChange({ ...reading, tripKm: v })}
-      />
-      <View style={styles.numRow}>
-        <Text style={styles.numLabel}>Time</Text>
-        <TextInput
-          value={clock}
-          onChangeText={(v) => {
-            setClock(v);
-            const t = v.trim();
-            if (t === '') onChange({ ...reading, clock: null });
-            else if (/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
-              onChange({ ...reading, clock: t.padStart(5, '0') });
-          }}
-          placeholder="HH:MM"
-          placeholderTextColor={colors.muted}
-          keyboardType="numbers-and-punctuation"
-          selectionColor={colors.accent}
-          accessibilityLabel="Time on the dashboard, HH:MM"
-          style={[styles.numInput, styles.timeInput, !clockOk && styles.numInputBad]}
-        />
-      </View>
+function ProposalFields({
+  p,
+  locked,
+  onEdit,
+}: {
+  p: Proposal;
+  locked: boolean;
+  onEdit: (patch: Partial<Proposal>) => void;
+}) {
+  const range = (label: string) => (
+    <NumberRow
+      label={label}
+      unit="km"
+      value={p.rangeKm}
+      max={MAX_RANGE_KM}
+      locked={locked}
+      onChange={(rangeKm) => onEdit({ rangeKm })}
+    />
+  );
+  return (
+    <>
+      {p.kind === 'trip' ? (
+        <>
+          <TextRow
+            label="From"
+            value={p.from}
+            locked={locked}
+            onChange={(from) => onEdit({ from })}
+          />
+          {p.stops.length ? <Text style={styles.cardNote}>via {p.stops.join(' → ')}</Text> : null}
+          <TextRow label="To" value={p.to} locked={locked} onChange={(to) => onEdit({ to })} />
+          <NumberRow
+            label="Distance"
+            unit="km"
+            value={p.distanceKm}
+            max={MAX_TRIP_KM}
+            locked={locked}
+            onChange={(distanceKm) => onEdit({ distanceKm })}
+          />
+          {range('Range left')}
+        </>
+      ) : p.kind === 'reading' ? (
+        range('Range left')
+      ) : (
+        <>
+          <NumberRow
+            label="Liters"
+            unit="L"
+            value={p.liters}
+            max={MAX_LITERS}
+            locked={locked}
+            onChange={(liters) => onEdit({ liters })}
+          />
+          <NumberRow
+            label="Total paid"
+            unit="AMD"
+            value={p.priceAmd}
+            max={MAX_PRICE_AMD}
+            steps={[1000, 100]}
+            whole
+            locked={locked}
+            onChange={(priceAmd) => onEdit({ priceAmd })}
+          />
+          {p.liters && p.priceAmd ? (
+            <Text style={styles.cardNote}>{formatAmd(p.priceAmd / p.liters)}/L</Text>
+          ) : null}
+          {range('Range after')}
+          <TextRow
+            label="Station"
+            value={p.station}
+            locked={locked}
+            onChange={(station) => onEdit({ station })}
+          />
+          <TextRow
+            label="Address"
+            value={p.address}
+            locked={locked}
+            onChange={(address) => onEdit({ address })}
+          />
+          <View style={styles.grades}>
+            {FUEL_GRADES.map((g) => (
+              <Chip
+                key={g.value}
+                label={g.label}
+                active={p.grade === g.value}
+                onPress={() => !locked && onEdit({ grade: p.grade === g.value ? null : g.value })}
+              />
+            ))}
+          </View>
+        </>
+      )}
+      <ClockRow value={p.clock} locked={locked} onChange={(clock) => onEdit({ clock })} />
+    </>
+  );
+}
 
-      <Segmented
-        options={[
-          { value: 'trip' as EntryKind, label: 'Trip' },
-          { value: 'reading' as EntryKind, label: 'Range' },
-          { value: 'refuel' as EntryKind, label: 'Refuel' },
-        ]}
-        value={kind}
-        onChange={setKind}
-        dark
+function TextRow({
+  label,
+  value,
+  locked,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  locked: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <View style={styles.numRow}>
+      <Text style={styles.numLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        editable={!locked}
+        placeholder="—"
+        placeholderTextColor={colors.muted}
+        selectionColor={colors.accent}
+        cursorColor={colors.accent}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel={label}
+        style={styles.textInput}
       />
-      <Button label="Insert into log" onPress={() => onInsert(reading, kind)} />
-      <Text style={styles.cardFoot}>
-        Opens a new entry with these values. You can still edit everything before saving.
-      </Text>
+    </View>
+  );
+}
+
+function ClockRow({
+  value,
+  locked,
+  onChange,
+}: {
+  value: string | null;
+  locked: boolean;
+  onChange: (v: string | null) => void;
+}) {
+  const [raw, setRaw] = useState(value ?? '');
+  // Follow outside changes (a correction from the chat) without fighting the typing.
+  useEffect(() => {
+    if (parseClock(raw) !== value) setRaw(value ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const bad = raw.trim() !== '' && parseClock(raw) === null;
+  return (
+    <View style={styles.numRow}>
+      <Text style={styles.numLabel}>Time</Text>
+      <TextInput
+        value={raw}
+        onChangeText={(v) => {
+          setRaw(v);
+          if (v.trim() === '') onChange(null);
+          else if (parseClock(v)) onChange(parseClock(v));
+        }}
+        editable={!locked}
+        placeholder="now"
+        placeholderTextColor={colors.muted}
+        keyboardType="numbers-and-punctuation"
+        selectionColor={colors.accent}
+        accessibilityLabel="Time, HH:MM. Empty means now"
+        style={[styles.numInput, styles.timeInput, bad && styles.numInputBad]}
+      />
     </View>
   );
 }
 
 function NumberRow({
   label,
+  unit,
   value,
   max,
+  steps = [1, 0.1],
+  whole = false,
+  locked,
   onChange,
 }: {
   label: string;
+  unit: string;
   value: number | null;
   max: number;
+  /** Big step, small step. Money steps in hundreds; dram has no decimals. */
+  steps?: [number, number];
+  whole?: boolean;
+  locked: boolean;
   onChange: (v: number | null) => void;
 }) {
   const [raw, setRaw] = useState(value === null ? '' : String(value));
-  useEffect(() => setRaw(value === null ? '' : String(value)), [value]);
+  // Follow outside changes (± buttons, a correction) but never rewrite what is
+  // being typed: "15." parses to 15, and replacing it would eat the dot.
+  useEffect(() => {
+    const typed = parseNumber(raw);
+    if ((typed ?? null) !== value) setRaw(value === null ? '' : String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
   const parsed = parseNumber(raw);
   const bad = raw.trim() !== '' && (parsed === undefined || parsed > max);
+  const clean = (n: number) => (whole ? Math.round(n) : Math.round(n * 10) / 10);
 
-  const step = (d: number) => onChange(nudge(value, d, max));
-  const btn = (d: number, l: string) => (
-    <Tap
-      onPress={() => step(d)}
-      accessibilityRole="button"
-      accessibilityLabel={`${label} ${l}`}
-      style={styles.nudge}
-    >
-      <Text style={styles.nudgeText}>{l}</Text>
-    </Tap>
-  );
+  const btn = (d: number) => {
+    const l = `${d > 0 ? '+' : '−'}${Math.abs(d)}`;
+    return (
+      <Tap
+        onPress={() => onChange(clean(nudge(value, d, max)))}
+        disabled={locked}
+        accessibilityRole="button"
+        accessibilityLabel={`${label} ${l}`}
+        style={styles.nudge}
+      >
+        <Text style={styles.nudgeText}>{l}</Text>
+      </Tap>
+    );
+  };
 
   return (
     <View style={styles.numBlock}>
       <Text style={styles.numLabel}>{label}</Text>
       <View style={styles.numControls}>
-        {btn(-1, '−1')}
-        {btn(-0.1, '−0.1')}
+        {locked ? null : btn(-steps[0])}
+        {locked ? null : btn(-steps[1])}
         <View style={[styles.numBox, bad && styles.numInputBad]}>
           <TextInput
             value={raw}
@@ -590,20 +802,21 @@ function NumberRow({
               setRaw(v);
               const n = parseNumber(v);
               if (v.trim() === '') onChange(null);
-              else if (n !== undefined && n <= max) onChange(Math.round(n * 10) / 10);
+              else if (n !== undefined && n <= max) onChange(clean(n));
             }}
+            editable={!locked}
             placeholder="—"
             placeholderTextColor={colors.muted}
-            keyboardType="decimal-pad"
+            keyboardType={whole ? 'number-pad' : 'decimal-pad'}
             selectionColor={colors.accent}
             cursorColor={colors.accent}
-            accessibilityLabel={`${label}, km`}
+            accessibilityLabel={`${label}, ${unit}`}
             style={styles.numInput}
           />
-          <Text style={styles.numUnit}>km</Text>
+          <Text style={styles.numUnit}>{unit}</Text>
         </View>
-        {btn(0.1, '+0.1')}
-        {btn(1, '+1')}
+        {locked ? null : btn(steps[1])}
+        {locked ? null : btn(steps[0])}
       </View>
     </View>
   );
@@ -949,6 +1162,25 @@ const styles = StyleSheet.create({
   conf: { color: colors.muted, fontFamily: fonts.ui, fontSize: 12, fontWeight: '600' },
   cardWarn: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '600' },
   cardNote: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontStyle: 'italic' },
+  cardSaved: { borderColor: colors.border },
+  prop: { gap: spacing.md },
+  propDivider: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
+  removeText: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '700' },
+  problem: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '600' },
+  savedText: { color: colors.success, fontFamily: fonts.ui, fontSize: 14, fontWeight: '700' },
+  grades: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  textInput: {
+    flex: 1,
+    minHeight: TOUCH,
+    color: colors.text,
+    fontFamily: fonts.ui,
+    fontSize: 16,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.md,
+  },
   cardFoot: { color: colors.muted, fontFamily: fonts.ui, fontSize: 12, lineHeight: 17 },
   numBlock: { gap: 6 },
   numRow: {

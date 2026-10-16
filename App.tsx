@@ -95,10 +95,6 @@ function Shell() {
       }),
     [],
   );
-  const openFromChat = useCallback((draft: Draft, markers: FormMarkers) => {
-    // The chat stays open underneath, so closing the form returns to it.
-    setForm({ initial: draft, markers, key: `ai-${Date.now()}` });
-  }, []);
   const closeForm = useCallback(() => setForm(null), []);
   const openChat = useCallback(() => setChatOpen(true), []);
   const closeChat = useCallback(() => setChatOpen(false), []);
@@ -138,7 +134,7 @@ function Shell() {
         )}
       </View>
       <TabBar tab={tab} onChange={setTab} />
-      {chatOpen ? <ChatScreen onClose={closeChat} onInsert={openFromChat} /> : null}
+      {chatOpen ? <ChatScreen onClose={closeChat} /> : null}
       {form ? (
         <EntryForm
           key={form.key}

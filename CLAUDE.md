@@ -25,6 +25,9 @@ the previous APKs on disk as rollbacks; do not delete them.
 
 ## Building the APK
 
+One command does all of the below and checks the signing key: `npm run build:apk`
+(`scripts/build-apk.sh`). The steps, for when something needs doing by hand:
+
 The SDK lives at `/root/android-sdk`, JDK 17 at
 `/usr/lib/jvm/java-17-openjdk-amd64`. If the SDK is gone, reinstall:
 cmdline-tools, `platforms;android-35`, `platforms;android-36`,

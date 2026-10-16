@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendMessage, chatTitle, newChat, sanitizeChats, setReading, sortChats } from './chat';
+import { appendMessage, chatTitle, newChat, sanitizeChats, sortChats, updateMessage } from './chat';
+import { emptyProposal } from './assistant';
 import { draftFromEntry, draftFromTrack, emptyDraft, validateDraft } from './draft';
 import { at, reading, realNotes, refuel, trip } from './entries.fixtures';
 import { availableModels, DEFAULT_MODEL, GEMINI_MODELS, resolveModel } from './models';
@@ -187,11 +188,36 @@ describe('chat', () => {
     expect(c.messages).toHaveLength(2);
   });
 
-  it('a reading edited on the card is stored on that message', () => {
-    const r = { rangeKm: 1, tripKm: null, clock: null, confidence: 'high' as const, notes: null };
-    let c = appendMessage(newChat('c', 1), { id: 'm', role: 'model', text: '', at: 2, reading: r });
-    c = setReading(c, 'm', { ...r, rangeKm: 2 });
-    expect(c.messages[0].reading?.rangeKm).toBe(2);
+  it('edited proposals and the saved mark are stored on that message', () => {
+    const p = { ...emptyProposal('reading'), rangeKm: 1 };
+    let c = appendMessage(newChat('c', 1), {
+      id: 'm',
+      role: 'model',
+      text: '',
+      at: 2,
+      proposals: [p],
+    });
+    c = updateMessage(c, 'm', { proposals: [{ ...p, rangeKm: 2 }] });
+    c = updateMessage(c, 'm', { savedIds: ['e1'] });
+    expect(c.messages[0]).toMatchObject({ proposals: [{ rangeKm: 2 }], savedIds: ['e1'] });
+  });
+
+  it('old chats with a photo reading load with a card instead', () => {
+    const old = {
+      ...newChat('c', 1),
+      messages: [
+        {
+          id: 'm',
+          role: 'model',
+          text: 'x',
+          at: 2,
+          reading: { rangeKm: 54, tripKm: null, clock: null },
+        },
+      ],
+    };
+    const [c] = sanitizeChats([old]);
+    expect(c.messages[0]).not.toHaveProperty('reading');
+    expect(c.messages[0].proposals).toEqual([{ ...emptyProposal('reading'), rangeKm: 54 }]);
   });
 
   it('sorts newest first; sanitises junk', () => {

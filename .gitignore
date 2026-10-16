@@ -9,3 +9,4 @@ dist/
 *.jks
 *.log
 .DS_Store
+package.json.prebuild-backup

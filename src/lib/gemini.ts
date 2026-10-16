@@ -9,7 +9,7 @@
  * and the log never depend on this succeeding.
  */
 
-import { parseChatReply, REPLY_SCHEMA, SYSTEM_PROMPT, type ChatReply } from './cluster';
+import { parseChatReply, REPLY_SCHEMA, SYSTEM_PROMPT, type ChatReply } from './assistant';
 
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 export const TIMEOUT_MS = 45_000;

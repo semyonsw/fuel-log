@@ -1,6 +1,6 @@
 {
   "name": "fuel-log",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "expo/AppEntry.js",
   "private": true,
   "scripts": {
@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:apk": "bash scripts/build-apk.sh"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

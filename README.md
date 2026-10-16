@@ -20,8 +20,9 @@ replaces a running note in Samsung Notes with something that does the arithmetic
 - **GPS trips:** start/stop recording from the Log (keeps going with the screen
   off), route on a map (MapLibre + OpenFreeMap, no key), distance from the track,
   From/To guessed from earlier trips, approximate fuel cost per trip.
-- **AI chat (Gemini):** photograph the dashboard and get range, trip distance and
-  time as an editable reading you can insert as an entry; ask about your log.
+- **AI chat (Gemini):** say what happened ("bought 15 L for 9000 AMD, fuel was
+  15 km, now 250 km") or photograph the dashboard; the entries it implies appear
+  as editable cards and one Approve saves them to the log. Ask about your log too.
   Several chats, with history; choice of current Gemini models.
 - **Backup:** export/import one JSON file; auto-backup after every change into a
   folder you pick once (the newest file replaces the old one).
@@ -51,6 +52,8 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
   -PWT_STORE_FILE="$PWD/app/debug.keystore" -PWT_STORE_PASSWORD=android \
   -PWT_KEY_ALIAS=androiddebugkey -PWT_KEY_PASSWORD=android
 ```
+
+Or all of it, with the signing check, in one command: `npm run build:apk`.
 
 The APK lands at `android/app/build/outputs/apk/release/app-release.apk`. Released
 builds are committed to the repo root as `fuel-log-<version>.apk`: copy one to the

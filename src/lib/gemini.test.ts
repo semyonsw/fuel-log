@@ -17,12 +17,12 @@ describe('buildRequest', () => {
     const req = buildRequest(
       [
         { role: 'user', text: 'read this', imageBase64: 'AAAA' },
-        { role: 'model', text: '{"reply":"ok","reading":null}' },
+        { role: 'model', text: '{"reply":"ok","entries":[]}' },
       ],
       '[{"kind":"reading"}]',
     );
     expect(req.systemInstruction.parts[0].text).toContain('[{"kind":"reading"}]');
-    expect(req.systemInstruction.parts[0].text).toContain('Nissan Sentra 2023 SV');
+    expect(req.systemInstruction.parts[0].text).toContain('the car');
     expect(req.contents[0].parts).toEqual([
       { text: 'read this' },
       { inline_data: { mime_type: 'image/jpeg', data: 'AAAA' } },
@@ -37,13 +37,17 @@ describe('sendChat', () => {
     const f = respond(
       200,
       okBody(
-        '{"reply":"Range 54 km","reading":{"rangeKm":54,"tripKm":null,"clock":null,"confidence":"high"}}',
+        '{"reply":"Range 54 km","entries":[{"kind":"reading","rangeKm":54}],"confidence":"high"}',
       ),
     );
     const r = await sendChat({ ...base, fetch: f });
     expect(r).toMatchObject({
       ok: true,
-      reply: { reply: 'Range 54 km', reading: { rangeKm: 54 } },
+      reply: {
+        reply: 'Range 54 km',
+        entries: [{ kind: 'reading', rangeKm: 54 }],
+        confidence: 'high',
+      },
     });
     const [url, init] = (f as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toContain('/models/gemini-3.5-flash-lite:generateContent');

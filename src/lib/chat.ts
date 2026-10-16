@@ -3,11 +3,20 @@
  *
  * Photos are never kept — not in AsyncStorage, not in the backup. A message
  * that carried one keeps only `hasPhoto`, so the thread still reads right
- * ("📷 Photo") and the model's reading that came back is still there. While a
+ * ("📷 Photo") and the entries the model proposed are still there. While a
  * chat is open the photo stays in memory so corrections can refer to it.
+ *
+ * A model message can carry proposed entries; once the user approves them,
+ * `savedIds` records the log entries they became, so the card shows "Saved"
+ * and cannot add the same refuel twice.
  */
 
-import type { ClusterReading } from './cluster';
+import {
+  legacyReadingToProposals,
+  parseProposal,
+  type Confidence,
+  type Proposal,
+} from './assistant';
 
 export type ChatMessage = {
   id: string;
@@ -15,7 +24,10 @@ export type ChatMessage = {
   text: string;
   at: number;
   hasPhoto?: boolean;
-  reading?: ClusterReading | null;
+  proposals?: Proposal[];
+  confidence?: Confidence | null;
+  /** Ids of the log entries the approved proposals became. */
+  savedIds?: string[];
   /** A failed request shown in the thread; never sent back to the model. */
   error?: boolean;
 };
@@ -53,12 +65,29 @@ export function appendMessage(chat: Chat, msg: ChatMessage): Chat {
   };
 }
 
-/** Replaces the reading on one message (the user edited it on the card). */
-export function setReading(chat: Chat, messageId: string, reading: ClusterReading): Chat {
+/** Changes one message (the user edited its cards, or approved them). */
+export function updateMessage(
+  chat: Chat,
+  messageId: string,
+  patch: Partial<Pick<ChatMessage, 'proposals' | 'savedIds'>>,
+): Chat {
   return {
     ...chat,
-    messages: chat.messages.map((m) => (m.id === messageId ? { ...m, reading } : m)),
+    messages: chat.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
   };
+}
+
+/** One message as read back from disk: proposals re-checked, old photo readings migrated. */
+function sanitizeMessage(m: ChatMessage & { reading?: unknown }): ChatMessage {
+  const { reading, ...rest } = m;
+  const proposals = Array.isArray(m.proposals)
+    ? m.proposals.map(parseProposal).filter((p): p is Proposal => p !== null)
+    : legacyReadingToProposals(reading);
+  const out: ChatMessage = { ...rest };
+  delete out.proposals;
+  if (proposals.length) out.proposals = proposals;
+  if (!Array.isArray(m.savedIds)) delete out.savedIds;
+  return out;
 }
 
 /** Newest activity first. */
@@ -83,14 +112,16 @@ export function sanitizeChats(raw: unknown): Chat[] {
       title: typeof c.title === 'string' ? c.title : NEW_CHAT_TITLE,
       createdAt: c.createdAt,
       updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : c.createdAt,
-      messages: c.messages.filter(
-        (m): m is ChatMessage =>
-          typeof m === 'object' &&
-          m !== null &&
-          typeof m.id === 'string' &&
-          (m.role === 'user' || m.role === 'model') &&
-          typeof m.text === 'string' &&
-          typeof m.at === 'number',
-      ),
+      messages: c.messages
+        .filter(
+          (m): m is ChatMessage =>
+            typeof m === 'object' &&
+            m !== null &&
+            typeof m.id === 'string' &&
+            (m.role === 'user' || m.role === 'model') &&
+            typeof m.text === 'string' &&
+            typeof m.at === 'number',
+        )
+        .map(sanitizeMessage),
     }));
 }
