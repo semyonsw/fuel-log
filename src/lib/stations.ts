@@ -11,15 +11,27 @@
  * like "Max Petrol" has many pumps and the most recent one is the likeliest.
  */
 
+import { t } from '../i18n';
 import type { Entry, FuelGrade, RefuelEntry } from '../types';
 import { sortNewestFirst } from './entries';
 import { normalizePlace } from './places';
 
+/**
+ * Each label is a getter, so it is read in the current language whenever a
+ * list renders, while `value` (what is stored) never changes.
+ */
+const grade = (value: FuelGrade) => ({
+  value,
+  get label() {
+    return t(`form.fuel.${value}`);
+  },
+});
+
 export const FUEL_GRADES: { value: FuelGrade; label: string }[] = [
-  { value: '92', label: 'Regular 92' },
-  { value: '95', label: 'Premium 95' },
-  { value: '98', label: 'Super 98' },
-  { value: 'diesel', label: 'Diesel' },
+  grade('92'),
+  grade('95'),
+  grade('98'),
+  grade('diesel'),
 ];
 
 export function gradeLabel(g: FuelGrade): string {
@@ -72,4 +84,69 @@ export function stationLine(r: RefuelEntry): string {
     .map((s) => s?.trim())
     .filter(Boolean)
     .join(' · ');
+}
+
+/**
+ * Up to `limit` addresses already used for refuels, for the address dropdown.
+ * When a station is chosen its own addresses come first — "Max Petrol" has
+ * pumps all over town, and the user's ones are the ones they have used — then
+ * the rest, so a station typed for the first time can still reuse a known
+ * address. Otherwise ranked like suggestStations.
+ */
+export function suggestAddresses(
+  entries: Entry[],
+  query: string,
+  station?: string,
+  limit = 8,
+): string[] {
+  const own = normalizePlace(station ?? '').toLowerCase();
+  const uses = new Map<string, { name: string; count: number; lastAt: number; ours: boolean }>();
+  for (const r of refuelsNewest(entries)) {
+    const name = normalizePlace(r.address ?? '');
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const ours = own !== '' && normalizePlace(r.station ?? '').toLowerCase() === own;
+    const u = uses.get(key);
+    if (u) {
+      u.count += 1;
+      u.ours ||= ours;
+    } else uses.set(key, { name, count: 1, lastAt: r.at, ours });
+  }
+  const q = normalizePlace(query).toLowerCase();
+  return [...uses.entries()]
+    .filter(([key]) => key.includes(q) && key !== q)
+    .sort(
+      ([ka, a], [kb, b]) =>
+        Number(b.ours) - Number(a.ours) ||
+        Number(kb.startsWith(q)) - Number(ka.startsWith(q)) ||
+        b.count - a.count ||
+        b.lastAt - a.lastAt,
+    )
+    .slice(0, limit)
+    .map(([, u]) => u.name);
+}
+
+/**
+ * What a NEW refuel opens with: the station, address and grade of the last
+ * fill-up, because the user mostly buys the same fuel at the same pump and
+ * changing one field beats typing three. Taken together from one refuel (the
+ * newest that recorded any of them) so a station never pairs with another
+ * pump's address. Amounts are never carried over: they differ every time.
+ */
+export function refuelDefaults(entries: Entry[]): {
+  station?: string;
+  address?: string;
+  grade?: FuelGrade;
+} {
+  const last = refuelsNewest(entries).find(
+    (r) => normalizePlace(r.station ?? '') || normalizePlace(r.address ?? '') || r.grade,
+  );
+  if (!last) return {};
+  const station = normalizePlace(last.station ?? '');
+  const address = normalizePlace(last.address ?? '');
+  return {
+    ...(station ? { station } : {}),
+    ...(address ? { address } : {}),
+    ...(last.grade ? { grade: last.grade } : {}),
+  };
 }

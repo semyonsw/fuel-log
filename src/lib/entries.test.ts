@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { setLang } from '../i18n';
 
 import {
   currentRangeKm,
@@ -246,5 +248,27 @@ describe('periodStart', () => {
 
   it('is 0 for all time', () => {
     expect(periodStart('all', now)).toBe(0);
+  });
+});
+
+describe('dayLabel in other languages', () => {
+  const now = at(16, 19, 0);
+  afterEach(() => setLang('en'));
+
+  it('Russian: short weekday, genitive month', () => {
+    setLang('ru');
+    expect(dayLabel('2026-10-16', now)).toBe('Сегодня');
+    expect(dayLabel('2026-10-15', now)).toBe('Вчера');
+    expect(dayLabel('2026-10-15', at(17, 8, 0))).toBe('Чт, 15 окт');
+    expect(dayLabel('2026-05-09', now)).toBe('Сб, 9 мая');
+    expect(dayLabel('2025-10-15', now)).toBe('Ср, 15 окт 2025');
+  });
+
+  it('Armenian', () => {
+    setLang('hy');
+    expect(dayLabel('2026-10-16', now)).toBe('Այսօր');
+    expect(dayLabel('2026-10-15', now)).toBe('Երեկ');
+    expect(dayLabel('2026-10-15', at(17, 8, 0))).toBe('Հնգ, 15 հոկ');
+    expect(groupByDay(realNotes, now).map((g) => g.label)).toEqual(['Այսօր', 'Երեկ']);
   });
 });

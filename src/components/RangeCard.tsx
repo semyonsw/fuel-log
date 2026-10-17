@@ -12,6 +12,7 @@ import { memo, useState } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Defs, Line, Pattern, Polyline, Rect } from 'react-native-svg';
 
+import { t } from '../i18n';
 import { rangeSpark } from '../lib/spark';
 import { colors, fonts, radius, spacing } from '../theme';
 import type { Entry } from '../types';
@@ -68,7 +69,7 @@ export const RangeCard = memo(function RangeCard({
         <Text style={styles.value} adjustsFontSizeToFit numberOfLines={1}>
           {range}
         </Text>
-        <Text style={styles.unit}>km range left</Text>
+        <Text style={styles.unit}>{t('components.range.unit')}</Text>
       </View>
       <Text style={styles.week}>{weekLine}</Text>
       <View style={styles.spark} onLayout={(e) => setW(e.nativeEvent.layout.width)}>

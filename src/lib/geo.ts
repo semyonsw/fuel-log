@@ -156,3 +156,50 @@ export function projectTrack(
   const offY = padding + (innerH - spanY * sc) / 2;
   return track.map((p) => ({ x: offX + (p.lon - w) * k * sc, y: offY + (n - p.lat) * sc }));
 }
+
+export type Corner = 'tl' | 'tr' | 'bl' | 'br';
+type Point = { x: number; y: number };
+const CORNERS: Corner[] = ['tr', 'tl', 'br', 'bl'];
+
+/** Pixels from (px,py) to segment a–b. */
+function pixelSegmentDistance(px: number, py: number, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2));
+  return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+}
+
+/**
+ * The corner of a `width`×`height` box farthest from a projected route, for
+ * a badge that must not sit on the line. Measured to the polyline's SEGMENTS,
+ * not just its points: a simplified track keeps few points on a straight
+ * avenue, and that avenue may cut right through a corner. `avoid` takes
+ * corners already used by something else (map attribution, an offline note).
+ * Ties go to top-right, then top-left: badges read best near the top.
+ */
+export function emptiestCorner(
+  points: Point[],
+  width: number,
+  height: number,
+  avoid: Corner[] = [],
+): Corner {
+  const candidates = CORNERS.filter((c) => !avoid.includes(c));
+  const pool = candidates.length > 0 ? candidates : CORNERS;
+  if (points.length === 0) return pool[0];
+  let best = pool[0];
+  let bestD = -1;
+  for (const c of pool) {
+    const cx = c[1] === 'l' ? 0 : width;
+    const cy = c[0] === 't' ? 0 : height;
+    let d = points.length === 1 ? Math.hypot(cx - points[0].x, cy - points[0].y) : Infinity;
+    for (let i = 1; i < points.length; i++) {
+      d = Math.min(d, pixelSegmentDistance(cx, cy, points[i - 1], points[i]));
+    }
+    if (d > bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best;
+}

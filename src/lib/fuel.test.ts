@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { setLang } from '../i18n';
 
 import { at, reading, refuel, trip } from './entries.fixtures';
 import { rangeUsedById } from './entries';
@@ -229,7 +231,7 @@ describe('calculate', () => {
     });
     expect(calculate({ ...base, entries: [refuel('f', 0, 30, 15000)] })).toEqual({
       ok: false,
-      missing: 'Enter consumption to calculate',
+      missing: 'Set consumption in Settings to calculate',
     });
     expect(
       calculate({ ...base, entries: [refuel('f', 0, 30, 15000)], consumption: '8' }),
@@ -256,5 +258,25 @@ describe('tripEstimates', () => {
     }
     expect(all.has('a')).toBe(false);
     expect(all.get('d')!.amd).toBe(600);
+  });
+});
+
+describe('calculate in Russian', () => {
+  afterEach(() => setLang('en'));
+
+  it('names the missing input in the current language', () => {
+    setLang('ru');
+    expect(
+      calculate({
+        mode: 'km',
+        amount: '100',
+        price: '',
+        consumption: '',
+        entries: [refuel('f', 0, 30, 15000)],
+      }),
+    ).toEqual({
+      ok: false,
+      missing: 'Укажите расход в Настройках для расчёта',
+    });
   });
 });

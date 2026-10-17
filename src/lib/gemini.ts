@@ -9,6 +9,7 @@
  * and the log never depend on this succeeding.
  */
 
+import { t, type StringKey } from '../i18n';
 import { parseChatReply, REPLY_SCHEMA, SYSTEM_PROMPT, type ChatReply } from './assistant';
 
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -35,17 +36,36 @@ export type GeminiError =
   | 'empty'
   | 'server';
 
-export const ERROR_TEXT: Record<GeminiError, string> = {
-  offline: 'No connection. The AI needs internet; everything else works offline.',
-  timeout: 'Gemini took too long to answer. Try again.',
-  cancelled: 'Cancelled.',
-  'bad-key': 'Gemini rejected the API key. Check it in the chat settings.',
-  quota: 'Gemini quota used up for now. Try again later or pick another model.',
-  blocked: 'Gemini refused to read this. Try another photo.',
-  model: 'This model is not available for your key. Pick another one.',
-  empty: 'Nothing usable came back. Try a sharper photo.',
-  server: 'Gemini had a problem. Try again in a moment.',
+const ERROR_KEYS: Record<GeminiError, StringKey> = {
+  offline: 'form.ai.offline',
+  timeout: 'form.ai.timeout',
+  cancelled: 'form.ai.cancelled',
+  'bad-key': 'form.ai.badKey',
+  quota: 'form.ai.quota',
+  blocked: 'form.ai.blocked',
+  model: 'form.ai.model',
+  empty: 'form.ai.empty',
+  server: 'form.ai.server',
 };
+
+/** The chat's line for each failure. Only shown to the user, never sent to the model. */
+export function errorText(e: GeminiError): string {
+  return t(ERROR_KEYS[e]);
+}
+
+/**
+ * `ERROR_TEXT[e]` still works for existing callers: each entry is a getter,
+ * so it reads in the language current at the moment it is looked up.
+ */
+export const ERROR_TEXT = Object.defineProperties(
+  {} as Record<GeminiError, string>,
+  Object.fromEntries(
+    (Object.keys(ERROR_KEYS) as GeminiError[]).map((e) => [
+      e,
+      { get: () => errorText(e), enumerable: true },
+    ]),
+  ),
+);
 
 export type ChatResult = { ok: true; reply: ChatReply } | { ok: false; error: GeminiError };
 

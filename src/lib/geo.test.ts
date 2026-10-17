@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  emptiestCorner,
   filterJitter,
   haversineM,
   processTrack,
@@ -148,5 +149,63 @@ describe('trackBounds / projectTrack', () => {
   it('a single point lands in the box', () => {
     const [p] = projectTrack([{ ...CASCADE, t: 0 }], 40, 40);
     expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+  });
+});
+
+describe('emptiestCorner', () => {
+  const W = 120;
+  const H = 60;
+  it('picks the corner opposite a route hugging one corner', () => {
+    // Route in the bottom-left: top-right is empty.
+    expect(
+      emptiestCorner(
+        [
+          { x: 5, y: 55 },
+          { x: 30, y: 40 },
+        ],
+        W,
+        H,
+      ),
+    ).toBe('tr');
+    // Route in the top-right: bottom-left is empty.
+    expect(
+      emptiestCorner(
+        [
+          { x: 115, y: 5 },
+          { x: 90, y: 20 },
+        ],
+        W,
+        H,
+      ),
+    ).toBe('bl');
+  });
+
+  it('measures to segments, not only points', () => {
+    // A straight diagonal from bottom-left to top-right with no middle points:
+    // top-right and bottom-left are on the line, so a remaining corner wins
+    // even though its nearest POINT is no farther than theirs.
+    const corner = emptiestCorner(
+      [
+        { x: 0, y: H },
+        { x: W, y: 0 },
+      ],
+      W,
+      H,
+    );
+    expect(['tl', 'br']).toContain(corner);
+  });
+
+  it('skips corners in `avoid`', () => {
+    const route = [
+      { x: 5, y: 55 },
+      { x: 30, y: 40 },
+    ];
+    expect(emptiestCorner(route, W, H, ['tr'])).not.toBe('tr');
+    expect(emptiestCorner(route, W, H, ['tr', 'tl', 'br'])).toBe('bl');
+  });
+
+  it('defaults to top-right with nothing to avoid', () => {
+    expect(emptiestCorner([], W, H)).toBe('tr');
+    expect(emptiestCorner([{ x: W / 2, y: H / 2 }], W, H)).toBe('tr');
   });
 });

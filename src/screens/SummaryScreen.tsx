@@ -1,30 +1,36 @@
 /**
  * The Summary tab: totals for a period, the fuel calculator, the per-day
- * breakdown, the editable refuel (spending) history, and the user's data.
+ * breakdown and the editable refuel (spending) history. (Export/import lives
+ * on Settings, in DataSection.)
  *
  * Periods are Week / Month / All / Custom. Custom shows FROM and TO day
  * steppers (FROM ≤ TO ≤ today) and ends at the start of the day after TO, so
- * TO is a whole day. Tiles, BY DAY, REFUELS and the empty state all follow
- * the selected period.
+ * TO is a whole day. − / + repeat while held; tapping the day opens the
+ * calendar, for jumps of weeks. Tiles, BY DAY, REFUELS and the empty state
+ * all follow the selected period.
  *
  * Tiles draw the number large and the unit small, the way a dashboard does.
  * Per-day figures go through `summarize` over the FULL entry list with that
  * day's bounds (not over the day's entries alone), because range used is
  * measured from the previous reading, which may be on an earlier day.
  *
- * The calculator's price is not remembered (it changes at every pump); its
- * consumption is, because the per-trip cost estimates on the Log use it too.
+ * The calculator's price is not remembered (it changes at every pump). Its
+ * consumption is the one set in Settings (the Log's per-trip estimates use it
+ * too), or the log's own figure; a line under Price says which.
  */
 
 import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { openDayPicker } from '../components/DayPicker';
 import { dayBounds, splitUnit } from '../components/format';
+import { useHoldRepeat } from '../components/HoldRepeat';
 import { ChevronIcon, DropIcon } from '../components/icons';
-import { Button, Segmented, Tap } from '../components/ui';
+import { Segmented, Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
-import { folderLabel } from '../lib/backup';
+import { t, type StringKey } from '../i18n';
+import { consumptionNote, consumptionSource } from '../lib/consumption';
 import {
   dayKey,
   dayLabel,
@@ -38,30 +44,27 @@ import {
   calculate,
   clampCustomRange,
   customPeriod,
-  kmPerLiterFromRefuels,
   latestPricePerLiter,
   shiftDay,
   type CalcMode,
 } from '../lib/fuel';
 import { formatAmd, formatKm, formatLiters } from '../lib/numbers';
 import { stationLine } from '../lib/stations';
-import { applyBackup, backupNow, chooseBackupFolder, pickBackupFile } from '../services/backup';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry, RefuelEntry } from '../types';
 
 type Period = 'week' | 'month' | 'all' | 'custom';
-const PERIODS: { value: Period; label: string }[] = [
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'all', label: 'All' },
-  { value: 'custom', label: 'Custom' },
+// Labels are looked up at render time so they follow the current language.
+const PERIODS: Period[] = ['week', 'month', 'all', 'custom'];
+const MODES: { value: CalcMode; key: StringKey }[] = [
+  { value: 'km', key: 'summary.calc.modeKm' },
+  { value: 'amd', key: 'summary.calc.modeAmd' },
 ];
-const MODES: { value: CalcMode; label: string }[] = [
-  { value: 'km', label: 'Cost of km' },
-  { value: 'amd', label: 'Km for AMD' },
-];
+// A tile value has a unit when it has anything besides digits, spaces and
+// separators; checked this way (not [A-Za-z]) so "км" and "կմ" split too.
+const HAS_UNIT = /[^\d\s.,\u2212-]/;
 
 export function SummaryScreen({
   onEdit,
@@ -106,17 +109,17 @@ export function SummaryScreen({
   );
 
   const tiles: { label: string; value: string; accent?: boolean; full?: boolean }[] = [
-    { label: 'Driven', value: formatKm(total.distanceKm) },
-    { label: 'Trips', value: String(total.trips) },
-    { label: 'Range used', value: formatKm(total.rangeUsedKm), accent: true },
-    { label: 'Refuels', value: String(total.refuels) },
-    { label: 'Fuel', value: formatLiters(total.liters) },
-    { label: 'Spent', value: formatAmd(total.spentAmd) },
+    { label: t('summary.tile.driven'), value: formatKm(total.distanceKm) },
+    { label: t('summary.tile.trips'), value: String(total.trips) },
+    { label: t('summary.tile.rangeUsed'), value: formatKm(total.rangeUsedKm), accent: true },
+    { label: t('summary.tile.refuels'), value: String(total.refuels) },
+    { label: t('summary.tile.fuel'), value: formatLiters(total.liters) },
+    { label: t('summary.tile.spent'), value: formatAmd(total.spentAmd) },
   ];
   if (total.liters > 0) {
     tiles.push({
-      label: 'Avg price',
-      value: `${formatAmd(total.spentAmd / total.liters)}/L`,
+      label: t('summary.tile.avgPrice'),
+      value: t('summary.perLiter', { amd: formatAmd(total.spentAmd / total.liters) }),
       full: true,
     });
   }
@@ -131,40 +134,65 @@ export function SummaryScreen({
       return clampCustomRange(next[0], next[1], Date.now());
     });
 
+  // The calendar's bounds keep FROM ≤ TO ≤ today, so a pick never has to be
+  // refused; the clamp is the same safety net stepDay uses.
+  const pickDay = (which: 0 | 1) => {
+    const today = shiftDay(Date.now(), 0);
+    openDayPicker({
+      day: custom[which],
+      min: which === 1 ? custom[0] : undefined,
+      max: which === 0 ? custom[1] : today,
+      onPick: (day) =>
+        setCustom((c) => {
+          const next: [number, number] = [c[0], c[1]];
+          next[which] = day;
+          return clampCustomRange(next[0], next[1], Date.now());
+        }),
+    });
+  };
+
   return (
     <ScrollView
       style={styles.root}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Summary</Text>
-      <Segmented options={PERIODS} value={period} onChange={setPeriod} />
+      <Text style={styles.title}>{t('summary.title')}</Text>
+      <Segmented
+        options={PERIODS.map((p) => ({ value: p, label: t(`summary.period.${p}`) }))}
+        value={period}
+        onChange={setPeriod}
+      />
 
       {period === 'custom' ? (
         <View style={styles.rangeRow}>
-          {(['From', 'To'] as const).map((label, i) => (
-            <View key={label} style={styles.rangeCol}>
+          {[t('summary.range.from'), t('summary.range.to')].map((label, i) => (
+            <View key={i} style={styles.rangeCol}>
               <Text style={styles.label}>{label}</Text>
               <View style={styles.stepper}>
+                <StepBtn
+                  dir={-1}
+                  label={t('summary.range.earlier', { label })}
+                  onStep={() => stepDay(i as 0 | 1, -1)}
+                />
                 <Tap
-                  onPress={() => stepDay(i as 0 | 1, -1)}
+                  onPress={() => pickDay(i as 0 | 1)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${label} one day earlier`}
-                  style={styles.stepBtn}
+                  accessibilityLabel={t('summary.range.pick', {
+                    label,
+                    day: dayLabel(dayKey(custom[i]), now),
+                  })}
+                  style={styles.stepValTap}
                 >
-                  <Text style={styles.stepGlyph}>−</Text>
+                  <Text style={styles.stepVal} numberOfLines={1} adjustsFontSizeToFit>
+                    {dayLabel(dayKey(custom[i]), now)}
+                  </Text>
                 </Tap>
-                <Text style={styles.stepVal} numberOfLines={1} adjustsFontSizeToFit>
-                  {dayLabel(dayKey(custom[i]), now)}
-                </Text>
-                <Tap
-                  onPress={() => stepDay(i as 0 | 1, 1)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${label} one day later`}
-                  style={styles.stepBtn}
-                >
-                  <Text style={styles.stepGlyph}>+</Text>
-                </Tap>
+                <StepBtn
+                  dir={1}
+                  label={t('summary.range.later', { label })}
+                  onStep={() => stepDay(i as 0 | 1, 1)}
+                />
               </View>
             </View>
           ))}
@@ -172,13 +200,16 @@ export function SummaryScreen({
       ) : null}
 
       <View style={styles.grid}>
-        {tiles.map((t) => {
-          const [num, unit] = /[A-Za-z]/.test(t.value) ? splitUnit(t.value) : [t.value, ''];
+        {tiles.map((tile) => {
+          const [num, unit] = HAS_UNIT.test(tile.value) ? splitUnit(tile.value) : [tile.value, ''];
           return (
-            <View key={t.label} style={[styles.tile, t.full && styles.tileFull]}>
-              <Text style={styles.label}>{t.label}</Text>
+            <View key={tile.label} style={[styles.tile, tile.full && styles.tileFull]}>
+              {/* Shrinks rather than wraps: some translations are longer than a half tile. */}
+              <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit>
+                {tile.label}
+              </Text>
               <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit>
-                <Text style={[styles.tileNum, t.accent && { color: colors.accent }]}>{num}</Text>
+                <Text style={[styles.tileNum, tile.accent && { color: colors.accent }]}>{num}</Text>
                 {unit ? <Text style={styles.tileUnit}> {unit}</Text> : null}
               </Text>
             </View>
@@ -190,30 +221,38 @@ export function SummaryScreen({
 
       {days.length > 0 ? (
         <>
-          <Text style={[styles.label, styles.section]}>By day</Text>
+          <Text style={[styles.label, styles.section]}>{t('summary.byDay')}</Text>
           <View style={styles.list}>
             {days.map((d, i) => (
               <View key={d.key} style={[styles.dayRow, i > 0 && styles.divider]}>
-                <Text style={styles.dayLabel}>{d.label}</Text>
-                <View style={styles.dayNums}>
+                <View style={styles.dayTop}>
+                  <Text style={styles.dayLabel} numberOfLines={1}>
+                    {d.label}
+                  </Text>
                   <Text style={styles.dayKm}>{formatKm(d.summary.distanceKm)}</Text>
-                  {d.summary.rangeUsedKm > 0 ? (
-                    <Text style={styles.dayUsed}>−{formatKm(d.summary.rangeUsedKm)} range</Text>
-                  ) : null}
-                  {d.summary.spentAmd > 0 ? (
-                    <Text style={styles.daySpent}>{formatAmd(d.summary.spentAmd)}</Text>
-                  ) : null}
                 </View>
+                {d.summary.rangeUsedKm > 0 || d.summary.spentAmd > 0 ? (
+                  <View style={styles.dayMore}>
+                    {d.summary.rangeUsedKm > 0 ? (
+                      <Text style={styles.dayUsed}>
+                        {t('summary.dayRange', { km: formatKm(d.summary.rangeUsedKm) })}
+                      </Text>
+                    ) : null}
+                    {d.summary.spentAmd > 0 ? (
+                      <Text style={styles.daySpent}>{formatAmd(d.summary.spentAmd)}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             ))}
           </View>
         </>
       ) : (
-        <Text style={styles.empty}>Nothing logged in this period yet.</Text>
+        <Text style={styles.empty}>{t('summary.empty')}</Text>
       )}
 
       <View style={styles.sectionHead}>
-        <Text style={[styles.label, styles.section]}>Refuels</Text>
+        <Text style={[styles.label, styles.section]}>{t('summary.refuels')}</Text>
       </View>
       {refuels.length > 0 ? (
         <View style={styles.list}>
@@ -222,7 +261,7 @@ export function SummaryScreen({
               key={r.id}
               onPress={() => onEdit(r)}
               accessibilityRole="button"
-              accessibilityHint="Edit this refuel"
+              accessibilityHint={t('summary.refuelHint')}
               style={[styles.refuelRow, i > 0 && styles.divider]}
             >
               <DropIcon />
@@ -244,34 +283,34 @@ export function SummaryScreen({
           ))}
         </View>
       ) : (
-        <Text style={styles.muted}>No refuels in this period.</Text>
+        <Text style={styles.muted}>{t('summary.noRefuels')}</Text>
       )}
       <Tap onPress={onAddRefuel} accessibilityRole="button" style={styles.addRefuel}>
-        <Text style={styles.addRefuelText}>+ Add refuel</Text>
+        <Text style={styles.addRefuelText}>{t('summary.addRefuel')}</Text>
       </Tap>
-
-      <DataCard />
     </ScrollView>
   );
 }
 
 function Calculator({ entries }: { entries: Entry[] }) {
   const consumption = useSettings((s) => s.consumption);
-  const setSettings = useSettings((s) => s.set);
   const [mode, setMode] = useState<CalcMode>('km');
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('');
 
   const lastPrice = useMemo(() => latestPricePerLiter(entries), [entries]);
-  const derived = useMemo(() => kmPerLiterFromRefuels(entries), [entries]);
+  const note = useMemo(
+    () => consumptionNote(consumptionSource(consumption, entries)),
+    [consumption, entries],
+  );
   const out = calculate({ mode, amount, price, consumption, entries });
 
   return (
     <>
-      <Text style={[styles.label, styles.section]}>Fuel calculator</Text>
+      <Text style={[styles.label, styles.section]}>{t('summary.calc.title')}</Text>
       <View style={styles.calc}>
         <Segmented
-          options={MODES}
+          options={MODES.map((m) => ({ value: m.value, label: t(m.key) }))}
           value={mode}
           onChange={(m) => {
             setMode(m);
@@ -280,36 +319,29 @@ function Calculator({ entries }: { entries: Entry[] }) {
           dark
         />
         <Text style={styles.calcHint}>
-          {mode === 'km' ? 'What a distance costs in fuel.' : 'How far a fuel budget takes you.'}
+          {t(mode === 'km' ? 'summary.calc.hintKm' : 'summary.calc.hintAmd')}
         </Text>
         <CalcInput
-          label={mode === 'km' ? 'Distance' : 'Money'}
-          suffix={mode === 'km' ? 'km' : 'AMD'}
+          label={t(mode === 'km' ? 'summary.calc.distance' : 'summary.calc.money')}
+          suffix={mode === 'km' ? t('summary.unit.km') : 'AMD'}
           value={amount}
           onChange={setAmount}
           placeholder={mode === 'km' ? '100' : '10000'}
           big
         />
-        <View style={styles.calcPair}>
-          <CalcInput
-            label="Price"
-            suffix="AMD/L"
-            value={price}
-            onChange={setPrice}
-            placeholder={lastPrice ? `last ${formatAmd(lastPrice).replace(/ AMD$/, '')}` : 'AMD/L'}
-            a11y="Price per litre"
-          />
-          <CalcInput
-            label="Consumption"
-            suffix="L/100 km"
-            value={consumption}
-            onChange={(v) => setSettings({ consumption: v })}
-            placeholder={
-              derived ? `${(Math.round((100 / derived) * 10) / 10).toString()} from log` : ''
-            }
-            a11y="Consumption, litres per 100 km"
-          />
-        </View>
+        <CalcInput
+          label={t('summary.calc.price')}
+          suffix={t('summary.unit.amdPerL')}
+          value={price}
+          onChange={setPrice}
+          placeholder={
+            lastPrice
+              ? t('summary.calc.lastPrice', { price: formatAmd(lastPrice).replace(/ AMD$/, '') })
+              : t('summary.unit.amdPerL')
+          }
+          a11y={t('summary.calc.priceA11y')}
+        />
+        {note ? <Text style={styles.calcNote}>{note}</Text> : null}
         <View style={styles.hr} />
         {out.ok ? (
           <View style={styles.resultBlock}>
@@ -317,10 +349,16 @@ function Calculator({ entries }: { entries: Entry[] }) {
               <Text style={styles.result}>
                 ≈ {out.unit === 'AMD' ? formatAmd(out.result).replace(/ AMD$/, '') : out.result}
               </Text>
-              <Text style={styles.resultUnit}> {out.unit}</Text>
+              <Text style={styles.resultUnit}>
+                {' '}
+                {out.unit === 'km' ? t('summary.unit.km') : out.unit}
+              </Text>
             </Text>
             <Text style={styles.resultDetail}>
-              {formatLiters(out.liters)} at {formatAmd(out.price)}/L
+              {t('summary.calc.detail', {
+                liters: formatLiters(out.liters),
+                price: formatAmd(out.price),
+              })}
             </Text>
           </View>
         ) : (
@@ -328,6 +366,15 @@ function Calculator({ entries }: { entries: Entry[] }) {
         )}
       </View>
     </>
+  );
+}
+
+function StepBtn({ dir, label, onStep }: { dir: 1 | -1; label: string; onStep: () => void }) {
+  const hold = useHoldRepeat(onStep);
+  return (
+    <Tap {...hold} accessibilityRole="button" accessibilityLabel={label} style={styles.stepBtn}>
+      <Text style={styles.stepGlyph}>{dir > 0 ? '+' : '−'}</Text>
+    </Tap>
   );
 }
 
@@ -349,7 +396,7 @@ function CalcInput({
   a11y?: string;
 }) {
   return (
-    <View style={[styles.calcField, !big && styles.flex]}>
+    <View style={styles.calcField}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.calcBox}>
         <TextInput
@@ -371,99 +418,9 @@ function CalcInput({
   );
 }
 
-function DataCard() {
-  const dir = useSettings((s) => s.backupDirUri);
-  const last = useSettings((s) => s.lastBackup);
-  const [busy, setBusy] = useState(false);
-
-  const exportNow = async () => {
-    setBusy(true);
-    const ok = dir ? await backupNow() : await chooseBackupFolder();
-    setBusy(false);
-    const status = useSettings.getState().lastBackup;
-    if (ok && status?.ok)
-      Alert.alert(
-        'Data saved',
-        `${status.file}\nin ${folderLabel(useSettings.getState().backupDirUri ?? '')}`,
-      );
-    else if (dir || useSettings.getState().backupDirUri)
-      Alert.alert('Not saved', status && !status.ok ? status.error : 'Try again.');
-  };
-
-  const importNow = async () => {
-    const picked = await pickBackupFile();
-    if (!picked.ok) {
-      if (picked.error) Alert.alert('Import failed', picked.error);
-      return;
-    }
-    const b = picked.backup;
-    const when = b.exportedAt ? new Date(b.exportedAt) : undefined;
-    const whenText =
-      when && !Number.isNaN(when.getTime())
-        ? ` from ${dayLabel(dayKey(when.getTime()), Date.now())} ${formatTime(when.getTime())}`
-        : '';
-    const run = async (mode: 'merge' | 'replace') => {
-      const r = await applyBackup(b, mode);
-      Alert.alert(
-        'Imported',
-        mode === 'merge'
-          ? `${r.added} added, ${r.updated} updated. ${r.total} entries now.`
-          : `Replaced. ${r.total} entries now.`,
-      );
-    };
-    Alert.alert(
-      'Import this backup?',
-      `Backup${whenText}: ${b.entries.length} entries, ${b.chats.length} chats.\n\nMerge adds new entries and updates changed ones; nothing is deleted.\nReplace makes this phone match the file exactly.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Replace', style: 'destructive', onPress: () => void run('replace') },
-        { text: 'Merge', onPress: () => void run('merge') },
-      ],
-    );
-  };
-
-  return (
-    <>
-      <Text style={[styles.label, styles.section]}>Your data</Text>
-      <View style={styles.calc}>
-        <Text style={styles.dataText}>
-          {dir
-            ? `Auto-backup is on. Every change is saved to ${folderLabel(dir)}, replacing the previous file.`
-            : 'Auto-backup is off. Pick a folder once and every change is saved there as one JSON file.'}
-        </Text>
-        {last ? (
-          <Text style={[styles.muted, !last.ok && { color: colors.danger }]}>
-            {last.ok
-              ? `Last saved ${dayLabel(dayKey(last.at), Date.now())} ${formatTime(last.at)} · ${last.file}`
-              : last.error}
-          </Text>
-        ) : null}
-        <View style={styles.calcPair}>
-          <View style={styles.flex}>
-            <Button label={busy ? 'Saving…' : 'Export data'} onPress={exportNow} />
-          </View>
-          <View style={styles.flex}>
-            <Button label="Import data" variant="ghost" onPress={importNow} />
-          </View>
-        </View>
-        <Tap
-          onPress={() => void chooseBackupFolder()}
-          accessibilityRole="button"
-          style={styles.folderBtn}
-        >
-          <Text style={styles.folderText}>
-            {dir ? 'Change backup folder' : 'Choose backup folder'}
-          </Text>
-        </Tap>
-      </View>
-    </>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
-  flex: { flex: 1 },
   title: {
     color: colors.text,
     fontFamily: fonts.ui,
@@ -496,8 +453,13 @@ const styles = StyleSheet.create({
   },
   stepBtn: { width: TOUCH, height: 52, alignItems: 'center', justifyContent: 'center' },
   stepGlyph: { color: colors.accent, fontFamily: fonts.ui, fontSize: 24, fontWeight: '600' },
-  stepVal: {
+  stepValTap: {
     flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+  },
+  stepVal: {
     textAlign: 'center',
     color: colors.text,
     fontFamily: fonts.ui,
@@ -544,7 +506,15 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.xs,
     marginVertical: -6,
   },
-  calcPair: { flexDirection: 'row', gap: spacing.md },
+  calcNote: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginHorizontal: spacing.xs,
+    marginTop: -spacing.sm,
+  },
   calcField: { gap: 6, minWidth: 0 },
   calcBox: {
     flexDirection: 'row',
@@ -603,13 +573,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   divider: { borderTopWidth: 1, borderTopColor: colors.border },
+  // Day label and km share the first line; range and AMD go on a second line
+  // under the label. Side by side, a day with all three needs ~370dp, more
+  // than a 360dp phone's row (~290dp), and the shrinking label broke
+  // letter by letter. A fixed second line reads the same on every row,
+  // where wrap-when-needed would make rows jump between one and two lines.
   dayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    justifyContent: 'center',
+    gap: 2,
     minHeight: 56,
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  dayTop: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   dayLabel: {
     color: colors.text,
@@ -618,13 +598,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
   },
-  dayNums: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.md,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  },
+  dayMore: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md, flexWrap: 'wrap' },
   dayKm: {
     color: colors.text,
     fontFamily: fonts.num,
@@ -665,7 +639,4 @@ const styles = StyleSheet.create({
     marginTop: -spacing.sm,
   },
   addRefuelText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
-  dataText: { color: colors.text, fontFamily: fonts.ui, fontSize: 15, lineHeight: 21 },
-  folderBtn: { minHeight: TOUCH, justifyContent: 'center' },
-  folderText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
 });

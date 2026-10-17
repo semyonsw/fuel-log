@@ -1,23 +1,19 @@
 /**
- * A place text field with remembered-place chips underneath.
+ * A place text field with a dropdown of remembered places.
  *
  * The user drives between the same dozen places ("4micro", "charents school",
- * "raykom"), so typing them is the slow part of logging. Chips come from
- * suggestPlaces (places already in the log, filtered by what's typed) and
- * one tap fills the field. They're a single horizontal strip so a form with
- * From + three stops + To doesn't turn into a wall of pills.
- *
- * Chips show while the field is focused or still empty: empty-and-unfocused is
- * the "just tap it, no keyboard" path, which is the fastest way to log a trip.
+ * "raykom"), so typing them is the slow part of logging. The list comes from
+ * suggestPlaces (places already in the log, filtered by what's typed); the
+ * chevron opens it without the keyboard, which is the fastest way to log a
+ * trip, and one tap fills the field.
  */
 
-import { forwardRef, useMemo, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { forwardRef, useCallback, type ReactNode } from 'react';
+import type { TextInput } from 'react-native';
 
-import { normalizePlace, suggestPlaces } from '../lib/places';
+import { suggestPlaces } from '../lib/places';
 import { useLog } from '../state/store';
-import { spacing } from '../theme';
-import { Chip, Field } from './ui';
+import { ComboField } from './Dropdown';
 
 type Props = {
   label: string;
@@ -38,61 +34,30 @@ export const PlaceField = forwardRef<TextInput, Props>(function PlaceField(
   ref,
 ) {
   const entries = useLog((s) => s.entries);
-  const [focused, setFocused] = useState(false);
 
-  // `exclude` is a fresh array each render; key the memo on its contents.
+  // `exclude` is a fresh array each render; key the callback on its contents.
   const excludeKey = exclude.join('\u0000');
-  const suggestions = useMemo(() => {
-    const own = normalizePlace(value);
-    return suggestPlaces(entries, value, excludeKey ? excludeKey.split('\u0000') : []).filter(
-      (p) => normalizePlace(p) !== own,
-    );
-  }, [entries, value, excludeKey]);
-
-  const showChips = (focused || value.trim() === '') && suggestions.length > 0;
+  const suggest = useCallback(
+    (q: string) => suggestPlaces(entries, q, excludeKey ? excludeKey.split('\u0000') : [], 50),
+    [entries, excludeKey],
+  );
 
   return (
-    <View style={styles.wrap}>
-      <Field
-        ref={ref}
-        label={label}
-        value={value}
-        onChangeText={onChange}
-        error={error}
-        placeholder={placeholder}
-        accessory={accessory}
-        marker={marker}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={onSubmitEditing}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-      />
-      {showChips ? (
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="always"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          {suggestions.map((p) => (
-            <Chip
-              key={p}
-              label={p}
-              tone="place"
-              accessibilityLabel={`Use ${p} for ${label}`}
-              onPress={() => onChange(p)}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
-    </View>
+    <ComboField
+      ref={ref}
+      label={label}
+      value={value}
+      onChangeText={onChange}
+      suggest={suggest}
+      error={error}
+      placeholder={placeholder}
+      accessory={accessory}
+      marker={marker}
+      autoCapitalize="none"
+      autoCorrect={false}
+      returnKeyType="next"
+      submitBehavior="submit"
+      onSubmitEditing={onSubmitEditing}
+    />
   );
-});
-
-const styles = StyleSheet.create({
-  wrap: { gap: spacing.sm },
-  chips: { gap: spacing.sm, paddingVertical: 4 },
 });

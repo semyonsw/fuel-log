@@ -14,6 +14,7 @@ import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { t, type StringKey } from '../i18n';
 import { dayKey, dayLabel, formatTime } from '../lib/entries';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import { ChevronIcon } from './icons';
@@ -28,11 +29,11 @@ export function WhenPicker({ at, onChange }: { at: number; onChange: (at: number
 
   return (
     <View style={styles.wrap}>
-      <SectionLabel>When</SectionLabel>
+      <SectionLabel>{t('components.when.label')}</SectionLabel>
       <Tap
         onPress={() => pickDate(at, onChange)}
         accessibilityRole="button"
-        accessibilityLabel={`Date: ${dayLabel(dayKey(at), Date.now())}. Change date`}
+        accessibilityLabel={t('components.when.date', { day: dayLabel(dayKey(at), Date.now()) })}
         style={styles.dateRow}
       >
         <Text style={styles.label}>{dayLabel(dayKey(at), Date.now())}</Text>
@@ -42,21 +43,21 @@ export function WhenPicker({ at, onChange }: { at: number; onChange: (at: number
       <View style={styles.steppers}>
         <Stepper
           value={pad(d.getHours())}
-          name="hour"
+          labels={['components.when.hourUp', 'components.when.hourDown']}
           onStep={(dir) => onChange(at + dir * HOUR)}
         />
         <Text style={styles.colon}>:</Text>
         <Stepper
           value={pad(d.getMinutes())}
-          name="minute"
+          labels={['components.when.minuteUp', 'components.when.minuteDown']}
           onStep={(dir) => onChange(at + dir * MIN)}
         />
       </View>
       <View style={styles.chips}>
-        <Chip label="Now" onPress={() => onChange(Date.now())} />
-        <Chip label="−15 min" onPress={() => onChange(at - 15 * MIN)} />
-        <Chip label="−1 h" onPress={() => onChange(at - HOUR)} />
-        <Chip label="Yesterday" onPress={() => onChange(at - 24 * HOUR)} />
+        <Chip label={t('components.when.now')} onPress={() => onChange(Date.now())} />
+        <Chip label={t('components.when.minus15')} onPress={() => onChange(at - 15 * MIN)} />
+        <Chip label={t('components.when.minusHour')} onPress={() => onChange(at - HOUR)} />
+        <Chip label={t('common.yesterday')} onPress={() => onChange(at - 24 * HOUR)} />
       </View>
     </View>
   );
@@ -79,11 +80,12 @@ function pickDate(at: number, onChange: (at: number) => void) {
 
 function Stepper({
   value,
-  name,
+  labels,
   onStep,
 }: {
   value: string;
-  name: string;
+  /** Accessibility labels for the + and − buttons. */
+  labels: [up: StringKey, down: StringKey];
   onStep: (dir: 1 | -1) => void;
 }) {
   // The latest onStep, so a held repeat keeps stepping from the current time
@@ -109,7 +111,7 @@ function Stepper({
       onPressOut={stop}
       delayLongPress={350}
       accessibilityRole="button"
-      accessibilityLabel={`${dir > 0 ? 'Increase' : 'Decrease'} ${name}`}
+      accessibilityLabel={t(dir > 0 ? labels[0] : labels[1])}
       style={styles.stepBtn}
     >
       <Text style={styles.stepGlyph}>{dir > 0 ? '+' : '−'}</Text>

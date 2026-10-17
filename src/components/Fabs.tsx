@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 
+import { t } from '../i18n';
 import { colors, spacing } from '../theme';
 import { FuelPumpIcon, PlusIcon, SparklesIcon } from './icons';
 import { Tap } from './ui';
@@ -38,7 +39,7 @@ export function Fabs({
       <Tap
         onPress={onRefuel}
         accessibilityRole="button"
-        accessibilityLabel="Add refuel"
+        accessibilityLabel={t('components.fab.refuel')}
         style={[styles.fab, styles.fuel]}
       >
         <FuelPumpIcon />
@@ -46,7 +47,7 @@ export function Fabs({
       <Tap
         onPress={onAdd}
         accessibilityRole="button"
-        accessibilityLabel="Add entry"
+        accessibilityLabel={t('components.fab.add')}
         style={styles.fab}
       >
         <PlusIcon />
@@ -126,7 +127,7 @@ function AiFab({ onPress }: { onPress: () => void }) {
       <Tap
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel="AI chat"
+        accessibilityLabel={t('components.fab.ai')}
         style={[styles.fab, styles.ai]}
       >
         <Animated.View style={sparkle}>

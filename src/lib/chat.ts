@@ -11,6 +11,8 @@
  * and cannot add the same refuel twice.
  */
 
+import { t } from '../i18n';
+import { STRINGS } from '../i18n/strings';
 import {
   legacyReadingToProposals,
   parseProposal,
@@ -40,18 +42,32 @@ export type Chat = {
   messages: ChatMessage[];
 };
 
-export const NEW_CHAT_TITLE = 'New chat';
+/**
+ * A fresh chat's title, in the language of the moment it was made. The title
+ * is stored, so "still untitled" is recognised in every language: a chat
+ * started in Russian and continued after switching to English still gets
+ * named from its first message.
+ */
+export const newChatTitle = () => t('form.chat.newTitle');
+
+const UNTITLED = new Set<string>(
+  Object.values(STRINGS).map((table) => table['form.chat.newTitle']),
+);
+
+export function isUntitled(title: string): boolean {
+  return UNTITLED.has(title);
+}
 
 export function newChat(id: string, now: number): Chat {
-  return { id, title: NEW_CHAT_TITLE, createdAt: now, updatedAt: now, messages: [] };
+  return { id, title: newChatTitle(), createdAt: now, updatedAt: now, messages: [] };
 }
 
 /** First user words, trimmed to fit a list row; a photo-only start is "Dashboard photo". */
 export function chatTitle(messages: ChatMessage[]): string {
   const first = messages.find((m) => m.role === 'user');
-  if (!first) return NEW_CHAT_TITLE;
+  if (!first) return newChatTitle();
   const text = first.text.trim().replace(/\s+/g, ' ');
-  if (!text) return first.hasPhoto ? 'Dashboard photo' : NEW_CHAT_TITLE;
+  if (!text) return first.hasPhoto ? t('form.chat.photoTitle') : newChatTitle();
   return text.length > 40 ? `${text.slice(0, 39)}…` : text;
 }
 
@@ -61,7 +77,7 @@ export function appendMessage(chat: Chat, msg: ChatMessage): Chat {
     ...chat,
     messages,
     updatedAt: msg.at,
-    title: chat.title === NEW_CHAT_TITLE ? chatTitle(messages) : chat.title,
+    title: isUntitled(chat.title) ? chatTitle(messages) : chat.title,
   };
 }
 
@@ -109,7 +125,7 @@ export function sanitizeChats(raw: unknown): Chat[] {
     )
     .map((c) => ({
       id: c.id,
-      title: typeof c.title === 'string' ? c.title : NEW_CHAT_TITLE,
+      title: typeof c.title === 'string' ? c.title : newChatTitle(),
       createdAt: c.createdAt,
       updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : c.createdAt,
       messages: c.messages

@@ -1,17 +1,20 @@
 /**
- * The Refuel form's station: a text field with remembered-station chips,
- * like PlaceField. Tapping a chip fills the name AND the address that
- * station had last time (lib/stations), since the same pump is the usual
- * case; the address stays editable.
+ * The Refuel form's station and address: text fields with a dropdown of the
+ * ones used before (lib/stations). Picking a station also fills the address
+ * that station had last time, since the same pump is the usual case; the
+ * address stays editable, and its own list puts that station's addresses
+ * first.
  */
 
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback } from 'react';
 
-import { lastAddressFor, suggestStations } from '../lib/stations';
+import { t } from '../i18n';
+import { lastAddressFor, suggestAddresses, suggestStations } from '../lib/stations';
 import { useLog } from '../state/store';
-import { spacing } from '../theme';
-import { Chip, Field } from './ui';
+import { ComboField } from './Dropdown';
+
+/** Enough to scroll through every station the user has ever used. */
+const LIMIT = 50;
 
 export function StationField({
   value,
@@ -20,49 +23,51 @@ export function StationField({
 }: {
   value: string;
   onChange: (v: string) => void;
-  /** A chip was tapped: the name and its last-used address. */
+  /** A remembered station was picked: the name and its last-used address. */
   onPick: (name: string, address: string | undefined) => void;
 }) {
   const entries = useLog((s) => s.entries);
-  const [focused, setFocused] = useState(false);
-  const suggestions = useMemo(() => suggestStations(entries, value), [entries, value]);
-  const show = (focused || value.trim() === '') && suggestions.length > 0;
+  const suggest = useCallback((q: string) => suggestStations(entries, q, LIMIT), [entries]);
 
   return (
-    <View style={styles.wrap}>
-      <Field
-        label="Station (optional)"
-        value={value}
-        onChangeText={onChange}
-        placeholder="e.g. Max Petrol"
-        autoCapitalize="words"
-        autoCorrect={false}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-      />
-      {show ? (
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="always"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          {suggestions.map((s) => (
-            <Chip
-              key={s}
-              label={s}
-              tone="place"
-              accessibilityLabel={`Use ${s} as the station`}
-              onPress={() => onPick(s, lastAddressFor(entries, s))}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
-    </View>
+    <ComboField
+      label={t('form.station')}
+      value={value}
+      onChangeText={onChange}
+      onPick={(name) => onPick(name, lastAddressFor(entries, name))}
+      suggest={suggest}
+      placeholder={t('form.stationPlaceholder')}
+      autoCapitalize="words"
+      autoCorrect={false}
+    />
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { gap: spacing.sm },
-  chips: { gap: spacing.sm, paddingVertical: 4 },
-});
+export function AddressField({
+  value,
+  station,
+  onChange,
+}: {
+  value: string;
+  /** The station on the form, whose addresses are listed first. */
+  station: string;
+  onChange: (v: string) => void;
+}) {
+  const entries = useLog((s) => s.entries);
+  const suggest = useCallback(
+    (q: string) => suggestAddresses(entries, q, station, LIMIT),
+    [entries, station],
+  );
+
+  return (
+    <ComboField
+      label={t('form.address')}
+      value={value}
+      onChangeText={onChange}
+      suggest={suggest}
+      placeholder={t('form.addressPlaceholder')}
+      autoCapitalize="words"
+      autoCorrect={false}
+    />
+  );
+}

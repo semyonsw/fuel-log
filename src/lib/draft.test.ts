@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { setLang } from '../i18n';
 import {
   draftFromEntry,
   emptyDraft,
@@ -228,6 +229,27 @@ describe('saveHint', () => {
     expect(saveHint({ liters: 'Enter liters' })).toBe('To save, fill in: Liters');
     expect(saveHint({ range: 'Not a number' })).toBe('Check: Range left');
     expect(saveHint({})).toBe('');
+  });
+});
+
+describe('in Russian and Armenian', () => {
+  afterEach(() => setLang('en'));
+
+  it('words errors and the save hint in the current language', () => {
+    setLang('ru');
+    const r = validateDraft(emptyDraft('trip', at(1, 9, 0)), 'x');
+    expect(r).toEqual({
+      ok: false,
+      errors: { from: 'Откуда выехали?', to: 'Куда приехали?' },
+    });
+    expect(!r.ok && saveHint(r.errors)).toBe('Чтобы сохранить, заполните: Откуда, Куда');
+    const bad = validateDraft({ ...emptyDraft('reading', at(1, 9, 0)), range: 'abc' }, 'x');
+    expect(!bad.ok && saveHint(bad.errors)).toBe('Проверьте: Запас хода');
+
+    setLang('hy');
+    const refuel = validateDraft(emptyDraft('refuel', at(1, 9, 0)), 'x');
+    expect(!refuel.ok && refuel.errors.liters).toBe('Մուտքագրեք լիտրերը');
+    expect(!refuel.ok && saveHint(refuel.errors)).toBe('Պահպանելու համար լրացրեք՝ Լիտր, Վճարված');
   });
 });
 

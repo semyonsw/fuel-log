@@ -16,10 +16,18 @@
  * Hermes ships with partial `Intl`, and `toLocaleString` on Android has printed
  * both "15,000" and "15 000" depending on the build. The grouping here is done by
  * hand so the screen says the same thing on every phone and in every test.
+ * Units follow the UI language (km / կմ / км, L / լ / л) but always as
+ * "<number> <unit>" with one space, which `splitUnit` relies on. AMD stays
+ * Latin in every language: it is what receipts and price boards print.
  */
 
-/** A trailing unit the user may have typed after the number. Longest first so "amd" wins. */
-const UNIT = /(km|amd|l|֏)$/i;
+import { t } from '../i18n';
+
+/**
+ * A trailing unit the user may have typed after the number, in any of the UI
+ * languages, since they type what the screen shows. Longest first so "amd" wins.
+ */
+const UNIT = /(km|amd|կմ|км|l|լ|л|֏)$/i;
 
 /** A plain non-negative decimal once spaces, unit and comma are dealt with. */
 const PLAIN = /^(\d+(\.\d*)?|\.\d+)$/;
@@ -40,12 +48,12 @@ function trimmed(n: number, digits: number): string {
 
 /** "22.5 km", "107 km". One decimal is as precise as a trip meter gets. */
 export function formatKm(n: number): string {
-  return `${trimmed(n, 1)} km`;
+  return `${trimmed(n, 1)} ${t('lib.unit.km')}`;
 }
 
 /** "30 L", "32.47 L". Two decimals, because the pump receipt has two. */
 export function formatLiters(n: number): string {
-  return `${trimmed(n, 2)} L`;
+  return `${trimmed(n, 2)} ${t('lib.unit.l')}`;
 }
 
 /** "15 000 AMD". Whole dram — nobody is handed luma at a petrol station. */

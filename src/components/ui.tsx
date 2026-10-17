@@ -30,6 +30,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { t } from '../i18n';
 import { colors, fonts, radius, spacing, TOUCH, type } from '../theme';
 
 /**
@@ -142,8 +143,13 @@ export const Field = forwardRef<
     numeric?: boolean;
     /** The Range kind's one big field. */
     big?: boolean;
+    /** Inside the box after the input, e.g. a dropdown's chevron. */
+    trailing?: ReactNode;
   }
->(function Field({ label, suffix, error, accessory, marker, numeric, big, style, ...input }, ref) {
+>(function Field(
+  { label, suffix, error, accessory, marker, numeric, big, trailing, style, ...input },
+  ref,
+) {
   return (
     <View style={styles.field}>
       <View style={styles.fieldLabelRow}>
@@ -168,6 +174,7 @@ export const Field = forwardRef<
           {...input}
         />
         {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
+        {trailing}
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
@@ -256,7 +263,7 @@ export function Sheet({
       statusBarTranslucent
     >
       <KeyboardAvoidingView behavior="padding" style={styles.flex1}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close">
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('form.close')}>
           <Animated.View
             style={[
               styles.sheet,
@@ -303,7 +310,7 @@ export function ConfirmSheet({
       {body ? <Text style={styles.sheetBody}>{body}</Text> : null}
       <View style={styles.sheetActions}>
         <View style={styles.flex1}>
-          <Button label="Cancel" variant="ghost" onPress={onCancel} />
+          <Button label={t('common.cancel')} variant="ghost" onPress={onCancel} />
         </View>
         <View style={styles.flex1}>
           <Button

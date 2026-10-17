@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { setLang } from '../i18n';
 
 import {
   backupFileName,
@@ -128,5 +130,14 @@ describe('folderLabel', () => {
       'Internal storage',
     );
     expect(folderLabel('weird')).toBe('weird');
+  });
+});
+
+describe('parseBackup in Russian', () => {
+  afterEach(() => setLang('en'));
+
+  it('explains the error in the current language', () => {
+    setLang('ru');
+    expect(parseBackup('hello')).toEqual({ ok: false, error: 'Файл не является корректным JSON.' });
   });
 });

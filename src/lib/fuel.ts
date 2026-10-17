@@ -21,6 +21,7 @@
  * never a guess.
  */
 
+import { t } from '../i18n';
 import type { Entry, RefuelEntry, TripEntry } from '../types';
 import { parseNumber } from './numbers';
 
@@ -169,7 +170,7 @@ export type CalcOutcome =
 /**
  * The Summary calculator. Blank price = the latest refuel's AMD/L; blank
  * consumption = the log's figure. The first missing input is named, in the
- * order the user would fill them.
+ * order the user would fill them, in the current language (it is shown as is).
  */
 export function calculate(input: {
   mode: CalcMode;
@@ -184,9 +185,13 @@ export function calculate(input: {
     typedPrice !== undefined && typedPrice > 0 ? typedPrice : latestPricePerLiter(input.entries);
   const kmPerL = effectiveKmPerLiter(input.entries, input.consumption);
   if (!ok(amount))
-    return { ok: false, missing: input.mode === 'km' ? 'Enter a distance' : 'Enter an amount' };
-  if (!ok(price)) return { ok: false, missing: 'Enter the price per litre' };
-  if (!ok(kmPerL)) return { ok: false, missing: 'Enter consumption to calculate' };
+    return {
+      ok: false,
+      missing: t(input.mode === 'km' ? 'summary.calc.enterDistance' : 'summary.calc.enterAmount'),
+    };
+  if (!ok(price)) return { ok: false, missing: t('summary.calc.enterPrice') };
+  // Consumption is set on the Settings screen now, so the prompt sends the user there.
+  if (!ok(kmPerL)) return { ok: false, missing: t('summary.calc.setConsumption') };
   // Inputs are all present here, so both always produce a result.
   const cost = fuelCost(amount, kmPerL, price);
   const reach = kmForMoney(amount, kmPerL, price);
@@ -196,5 +201,5 @@ export function calculate(input: {
   if (input.mode === 'amd' && reach) {
     return { ok: true, result: reach.km, unit: 'km', liters: reach.liters, price };
   }
-  return { ok: false, missing: 'Enter consumption to calculate' };
+  return { ok: false, missing: t('summary.calc.setConsumption') };
 }

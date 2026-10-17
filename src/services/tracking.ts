@@ -22,6 +22,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { create } from 'zustand';
 
+import { t } from '../i18n';
 import { processTrack, trackDistanceKm, filterJitter, type RawFix } from '../lib/geo';
 import { colors } from '../theme';
 import type { TrackPoint } from '../types';
@@ -110,8 +111,8 @@ export async function startTracking(): Promise<StartResult> {
       pausesUpdatesAutomatically: false,
       activityType: Location.ActivityType.AutomotiveNavigation,
       foregroundService: {
-        notificationTitle: 'Recording your trip',
-        notificationBody: 'Fuel Log is recording the route. Open the app to stop.',
+        notificationTitle: t('services.tracking.title'),
+        notificationBody: t('services.tracking.body'),
         notificationColor: colors.accent,
         killServiceOnDestroy: false,
       },

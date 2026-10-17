@@ -10,14 +10,16 @@
  *
  * Refuels get an amber edge and a faint wash so fill-ups stand out when
  * scrolling a month back. A tracked trip shows its route as a small drawn
- * line (no map tiles in a list) and every trip with enough data shows its
- * approximate fuel cost.
+ * line (no map tiles in a list) with how long the drive took in its emptiest
+ * corner, and every trip with enough data shows its approximate fuel cost.
  */
 
 import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { t } from '../i18n';
 import type { Entry } from '../types';
+import { trackDurationMs } from '../lib/duration';
 import { formatTime } from '../lib/entries';
 import type { FuelResult } from '../lib/fuel';
 import { formatAmd, formatKm, formatLiters } from '../lib/numbers';
@@ -44,7 +46,7 @@ export const EntryRow = memo(function EntryRow({ entry, rangeUsed, estimate, onP
     <Tap
       onPress={() => onPress(entry)}
       accessibilityRole="button"
-      accessibilityHint="Edit this entry"
+      accessibilityHint={t('app.row.editHint')}
       style={styles.row}
     >
       {entry.kind === 'refuel' ? (
@@ -76,14 +78,19 @@ export const EntryRow = memo(function EntryRow({ entry, rangeUsed, estimate, onP
             </View>
             {entry.track && entry.track.length > 1 ? (
               <View style={styles.thumb}>
-                <TrackPreview track={entry.track} width={120} height={56} />
+                <TrackPreview
+                  track={entry.track}
+                  width={120}
+                  height={56}
+                  durationMs={trackDurationMs(entry.track)}
+                />
               </View>
             ) : null}
           </>
         ) : entry.kind === 'reading' ? (
           <View style={styles.inline}>
             <GaugeIcon />
-            <Text style={styles.primary}>{formatKm(entry.rangeKm)} left</Text>
+            <Text style={styles.primary}>{t('app.row.left', { km: formatKm(entry.rangeKm) })}</Text>
             <Delta used={rangeUsed} />
           </View>
         ) : (
@@ -97,7 +104,7 @@ export const EntryRow = memo(function EntryRow({ entry, rangeUsed, estimate, onP
             <View style={styles.chips}>
               {entry.liters > 0 ? (
                 <Text style={styles.meta}>
-                  {formatAmd(Math.round(entry.priceAmd / entry.liters))}/L
+                  {formatAmd(Math.round(entry.priceAmd / entry.liters))}/{t('lib.unit.l')}
                 </Text>
               ) : null}
               {entry.rangeKm !== undefined ? (
@@ -127,7 +134,7 @@ export const EntryRow = memo(function EntryRow({ entry, rangeUsed, estimate, onP
 function RangeChip({ rangeKm, used }: { rangeKm: number; used?: number }) {
   return (
     <View style={[styles.chip, styles.rangeChip]}>
-      <Text style={styles.chipText}>{formatKm(rangeKm)} left</Text>
+      <Text style={styles.chipText}>{t('app.row.left', { km: formatKm(rangeKm) })}</Text>
       <Delta used={used} withWord />
     </View>
   );
@@ -139,7 +146,7 @@ function Delta({ used, withWord = true }: { used?: number; withWord?: boolean })
   return (
     <Text style={styles.delta}>
       −{formatDelta(used)}
-      {withWord ? <Text style={styles.deltaWord}> used</Text> : null}
+      {withWord ? <Text style={styles.deltaWord}> {t('app.row.used')}</Text> : null}
     </Text>
   );
 }

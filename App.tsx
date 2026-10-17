@@ -1,16 +1,26 @@
 /**
- * App shell: safe area, system colours, the two tabs, and the overlays (the
+ * App shell: safe area, system colours, the three tabs, and the overlays (the
  * entry form and the AI chat).
  *
- * No navigation library: there are two tabs, one form and one chat, so plain
+ * No navigation library: there are three tabs, one form and one chat, so plain
  * state is simpler and has no native setup. Overlays render above the tabs
  * (tab bar included) so they behave like full-screen sheets and handle their
- * own Android back. Back on the Summary tab returns to Log before leaving the
- * app, which is what Android users expect from a bottom-tab app.
+ * own Android back. Back on Summary or Settings returns to History before
+ * leaving the app, which is what Android users expect from a bottom-tab app.
+ *
+ * The tab bar is icons only; a long press reveals the names (see
+ * `lib/tabLabels`). The root view watches every touch so the next touch
+ * outside the bar, a tap or the start of a scroll, hides them again.
  *
  * Until the stores have read AsyncStorage we show a bare loading state, so a
  * user with history never sees the "nothing logged yet" screen flash. The
- * first launch shows the welcome/permissions screen once. Auto-backup starts
+ * first launch shows the welcome/permissions screen once.
+ *
+ * The UI language is the persisted setting, applied with `setLang` during
+ * render, before any child renders, so the first frame after hydration is
+ * already in the right language. Strings are read at render time, so on a
+ * switch everything under the `key={language}` wrapper remounts and reads
+ * them afresh; nothing has to subscribe to the language itself. Auto-backup starts
  * only after everything has loaded, so a half-read store is never written out.
  *
  * `services/tracking` is imported for its side effect: the background GPS
@@ -19,20 +29,23 @@
 
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, BackHandler, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import './src/services/tracking';
-import { LogTabIcon, SummaryTabIcon } from './src/components/icons';
+import { LogTabIcon, SettingsTabIcon, SummaryTabIcon } from './src/components/icons';
 import { Tap } from './src/components/ui';
+import { setLang, t, type StringKey } from './src/i18n';
 import { emptyDraft, type Draft } from './src/lib/draft';
+import { nextLabelsShown, type TabLabelEvent } from './src/lib/tabLabels';
 import { startAutoBackup } from './src/services/backup';
 import { loadApiKey } from './src/services/secrets';
 import { restoreTracking } from './src/services/tracking';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { EntryForm, type FormMarkers } from './src/screens/EntryForm';
 import { LogScreen } from './src/screens/LogScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SummaryScreen } from './src/screens/SummaryScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { useSettings } from './src/state/settings';
@@ -40,11 +53,9 @@ import { useLog } from './src/state/store';
 import { colors, fonts, spacing } from './src/theme';
 import type { Entry } from './src/types';
 
-type Tab = 'log' | 'summary';
+type Tab = 'history' | 'summary' | 'settings';
 /** null = closed; `editing` = an existing entry; `initial` = a pre-filled new one. */
 type FormState = { editing?: Entry; initial?: Draft; markers?: FormMarkers; key: string } | null;
-
-const GPS_MARK = 'from GPS';
 
 export default function App() {
   useEffect(() => {
@@ -65,10 +76,15 @@ function Shell() {
   const logReady = useLog((s) => s.hydrated);
   const settingsReady = useSettings((s) => s.hydrated);
   const onboarded = useSettings((s) => s.onboarded);
+  const language = useSettings((s) => s.language);
+  // Cheap and idempotent; must run before the children below read strings.
+  setLang(language);
   const [extrasReady, setExtrasReady] = useState(false);
-  const [tab, setTab] = useState<Tab>('log');
+  const [tab, setTab] = useState<Tab>('history');
   const [form, setForm] = useState<FormState>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [labelsShown, setLabelsShown] = useState(false);
+  const barTouch = useRef(false);
   const ready = logReady && settingsReady && extrasReady;
 
   useEffect(() => {
@@ -83,26 +99,41 @@ function Shell() {
     [],
   );
   const openRecorded = useCallback(
-    (draft: Draft, m: { from?: boolean; to?: boolean; distance?: boolean }) =>
+    (draft: Draft, m: { from?: boolean; to?: boolean; distance?: boolean }) => {
+      const mark = t('app.fromGps');
       setForm({
         initial: draft,
         markers: {
-          ...(m.from ? { from: GPS_MARK } : {}),
-          ...(m.to ? { to: GPS_MARK } : {}),
-          ...(m.distance ? { distance: GPS_MARK } : {}),
+          ...(m.from ? { from: mark } : {}),
+          ...(m.to ? { to: mark } : {}),
+          ...(m.distance ? { distance: mark } : {}),
         },
         key: `gps-${Date.now()}`,
-      }),
+      });
+    },
     [],
   );
   const closeForm = useCallback(() => setForm(null), []);
   const openChat = useCallback(() => setChatOpen(true), []);
   const closeChat = useCallback(() => setChatOpen(false), []);
+  const labelEvent = useCallback(
+    (e: TabLabelEvent) => setLabelsShown((shown) => nextLabelsShown(shown, e)),
+    [],
+  );
+  const markBarTouch = useCallback(() => {
+    barTouch.current = true;
+  }, []);
+  // Touch events bubble child-first, so the bar's handler has already run for
+  // a touch that started inside it by the time this one sees it.
+  const onRootTouch = useCallback(() => {
+    labelEvent(barTouch.current ? 'touchInBar' : 'touchOutside');
+    barTouch.current = false;
+  }, [labelEvent]);
 
   useEffect(() => {
-    if (form || chatOpen || tab === 'log') return;
+    if (form || chatOpen || tab === 'history') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setTab('log');
+      setTab('history');
       return true;
     });
     return () => sub.remove();
@@ -117,12 +148,16 @@ function Shell() {
     );
   }
 
-  if (!onboarded) return <WelcomeScreen />;
+  if (!onboarded) return <WelcomeScreen key={language} />;
 
   return (
-    <View style={styles.root}>
+    // onTouchStart only observes: it never claims the responder, so every
+    // touch still reaches its target. A touch that began in the tab bar has
+    // already marked itself (child handlers run first) and is let through.
+    // Keyed by language so a switch in Settings remounts it all translated.
+    <View key={language} style={styles.root} onTouchStart={onRootTouch}>
       <View style={styles.screen}>
-        {tab === 'log' ? (
+        {tab === 'history' ? (
           <LogScreen
             onAdd={openNew}
             onAddRefuel={openRefuel}
@@ -130,11 +165,19 @@ function Shell() {
             onAi={openChat}
             onTripRecorded={openRecorded}
           />
-        ) : (
+        ) : tab === 'summary' ? (
           <SummaryScreen onEdit={openEdit} onAddRefuel={openRefuel} />
+        ) : (
+          <SettingsScreen />
         )}
       </View>
-      <TabBar tab={tab} onChange={setTab} />
+      <TabBar
+        tab={tab}
+        onChange={setTab}
+        labelsShown={labelsShown}
+        onLabelEvent={labelEvent}
+        onBarTouch={markBarTouch}
+      />
       {chatOpen ? <ChatScreen onClose={closeChat} /> : null}
       {form ? (
         <EntryForm
@@ -149,28 +192,78 @@ function Shell() {
   );
 }
 
-function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+/** Names are string keys, translated when the bar renders. */
+const TABS: { value: Tab; labelKey: StringKey; Icon: typeof LogTabIcon }[] = [
+  { value: 'history', labelKey: 'app.tab.history', Icon: LogTabIcon },
+  { value: 'summary', labelKey: 'app.tab.summary', Icon: SummaryTabIcon },
+  { value: 'settings', labelKey: 'app.tab.settings', Icon: SettingsTabIcon },
+];
+
+/** How far the icon sits lowered while the names are hidden, so it looks centred. */
+const ICON_DROP = 9;
+
+function TabBar({
+  tab,
+  onChange,
+  labelsShown,
+  onLabelEvent,
+  onBarTouch,
+}: {
+  tab: Tab;
+  onChange: (t: Tab) => void;
+  labelsShown: boolean;
+  onLabelEvent: (e: TabLabelEvent) => void;
+  onBarTouch: () => void;
+}) {
   const insets = useSafeAreaInsets();
-  const items: { value: Tab; label: string }[] = [
-    { value: 'log', label: 'Log' },
-    { value: 'summary', label: 'Summary' },
-  ];
+  // 0 = icons only, 1 = names showing. Only opacity and translateY move, so the
+  // bar never changes height and the animation runs on the native driver.
+  const shown = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(shown, {
+      toValue: labelsShown ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [labelsShown, shown]);
+
+  const iconShift = shown.interpolate({ inputRange: [0, 1], outputRange: [ICON_DROP, 0] });
+  const labelShift = shown.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+
   return (
-    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]} accessibilityRole="tablist">
-      {items.map((it) => {
-        const on = it.value === tab;
+    <View
+      style={[styles.tabBar, { paddingBottom: insets.bottom }]}
+      accessibilityRole="tablist"
+      onTouchStart={onBarTouch}
+    >
+      {TABS.map(({ value, labelKey, Icon }) => {
+        const label = t(labelKey);
+        const on = value === tab;
         const color = on ? colors.accent : colors.muted;
         return (
           <Tap
-            key={it.value}
-            onPress={() => onChange(it.value)}
+            key={value}
+            onPress={() => onChange(value)}
+            // With onLongPress set, Pressable does not also fire onPress, so a
+            // long press only reveals the names and leaves the tab as it is.
+            onLongPress={() => onLabelEvent('longPress')}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
-            accessibilityLabel={it.label}
+            accessibilityLabel={label}
             style={styles.tab}
           >
-            {it.value === 'log' ? <LogTabIcon color={color} /> : <SummaryTabIcon color={color} />}
-            <Text style={[styles.tabLabel, { color }]}>{it.label}</Text>
+            <Animated.View style={{ transform: [{ translateY: iconShift }] }}>
+              <Icon color={color} />
+            </Animated.View>
+            <Animated.Text
+              importantForAccessibility="no"
+              style={[
+                styles.tabLabel,
+                { color, opacity: shown, transform: [{ translateY: labelShift }] },
+              ]}
+            >
+              {label}
+            </Animated.Text>
             <View style={[styles.tabIndicator, on && styles.tabIndicatorOn]} />
           </Tap>
         );

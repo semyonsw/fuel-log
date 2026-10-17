@@ -9,32 +9,22 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Tap } from '../components/ui';
+import { t, type StringKey } from '../i18n';
 import { requestAll, type PermissionReport } from '../services/permissions';
 import { useSettings } from '../state/settings';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 
-const ITEMS: { key: keyof PermissionReport; title: string; why: string }[] = [
-  {
-    key: 'location',
-    title: 'Location',
-    why: 'Records the route and distance of a trip you start.',
-  },
-  {
-    key: 'background',
-    title: 'Location all the time',
-    why: 'Keeps recording with the screen off. Android opens a settings page: choose "Allow all the time".',
-  },
+// Keys only; the texts are looked up at render so they follow the current language.
+const ITEMS: { key: keyof PermissionReport; title: StringKey; why: StringKey }[] = [
+  { key: 'location', title: 'welcome.location.title', why: 'welcome.location.why' },
+  { key: 'background', title: 'welcome.background.title', why: 'welcome.background.why' },
   {
     key: 'notifications',
-    title: 'Notifications',
-    why: 'Shows "Recording your trip" while GPS is on, so you always know.',
+    title: 'welcome.notifications.title',
+    why: 'welcome.notifications.why',
   },
-  { key: 'camera', title: 'Camera', why: 'Photographs the dashboard for the AI to read.' },
-  {
-    key: 'folder',
-    title: 'Backup folder',
-    why: 'Pick a folder once; every change is saved there as one JSON file.',
-  },
+  { key: 'camera', title: 'welcome.camera.title', why: 'welcome.camera.why' },
+  { key: 'folder', title: 'welcome.folder.title', why: 'welcome.folder.why' },
 ];
 
 export function WelcomeScreen() {
@@ -57,45 +47,44 @@ export function WelcomeScreen() {
         { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.xl },
       ]}
     >
-      <Text style={styles.title}>Welcome to Fuel Log</Text>
-      <Text style={styles.lead}>
-        Everything stays on this phone. To record trips, read dashboard photos and back up your
-        data, Fuel Log needs:
-      </Text>
+      <Text style={styles.title}>{t('welcome.title')}</Text>
+      <Text style={styles.lead}>{t('welcome.lead')}</Text>
       <View style={styles.list}>
         {ITEMS.map((it, i) => {
-          const state = report ? (report[it.key] ? 'Allowed' : 'Not allowed') : '';
+          const state = report ? t(report[it.key] ? 'welcome.allowed' : 'welcome.notAllowed') : '';
           return (
             <View key={it.key} style={[styles.item, i > 0 && styles.divider]}>
               <View style={styles.itemHead}>
-                <Text style={styles.itemTitle}>{it.title}</Text>
+                <Text style={styles.itemTitle}>{t(it.title)}</Text>
                 {state ? (
                   <Text style={[styles.state, report?.[it.key] ? styles.ok : styles.no]}>
                     {state}
                   </Text>
                 ) : null}
               </View>
-              <Text style={styles.why}>{it.why}</Text>
+              <Text style={styles.why}>{t(it.why, { notice: t('services.tracking.title') })}</Text>
             </View>
           );
         })}
       </View>
       {report ? (
         <>
-          <Text style={styles.note}>
-            Anything not allowed is asked again when you first use it.
-          </Text>
-          <Button label="Start using Fuel Log" onPress={() => set({ onboarded: true })} />
+          <Text style={styles.note}>{t('welcome.askedLater')}</Text>
+          <Button label={t('welcome.start')} onPress={() => set({ onboarded: true })} />
         </>
       ) : (
         <>
-          <Button label={busy ? 'Asking…' : 'Allow all'} onPress={allow} dim={busy} />
+          <Button
+            label={t(busy ? 'welcome.asking' : 'welcome.allowAll')}
+            onPress={allow}
+            dim={busy}
+          />
           <Tap
             onPress={() => set({ onboarded: true })}
             accessibilityRole="button"
             style={styles.skip}
           >
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={styles.skipText}>{t('welcome.skip')}</Text>
           </Tap>
         </>
       )}

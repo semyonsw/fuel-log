@@ -40,8 +40,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CloseIcon } from '../components/icons';
 import { PlaceField } from '../components/PlaceField';
 import { RouteMap } from '../components/RouteMap';
-import { StationField } from '../components/StationField';
-import { Button, Chip, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
+import { Dropdown } from '../components/Dropdown';
+import { AddressField, StationField } from '../components/StationField';
+import { Button, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
 import { WhenPicker } from '../components/WhenPicker';
 import {
   draftFromEntry,
@@ -56,23 +57,26 @@ import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { trackDistanceKm } from '../lib/geo';
 import { newId } from '../lib/id';
 import { formatAmd, formatKm, formatLiters, parseNumber } from '../lib/numbers';
-import { FUEL_GRADES } from '../lib/stations';
+import { FUEL_GRADES, refuelDefaults } from '../lib/stations';
 import { formatDelta } from '../components/format';
+import { t, type StringKey } from '../i18n';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry, EntryKind } from '../types';
 
-const KINDS: { value: EntryKind; label: string }[] = [
-  { value: 'trip', label: 'Trip' },
-  { value: 'reading', label: 'Range' },
-  { value: 'refuel', label: 'Refuel' },
-];
+const KINDS: EntryKind[] = ['trip', 'reading', 'refuel'];
 
-const KIND_HINT: Record<EntryKind, string> = {
-  trip: 'Where you drove, and the range left after.',
-  reading: 'What the dashboard shows as range left right now.',
-  refuel: 'Fuel you bought: litres and the total paid.',
+const KIND_LABEL: Record<EntryKind, StringKey> = {
+  trip: 'form.kind.trip',
+  reading: 'form.kind.reading',
+  refuel: 'form.kind.refuel',
+};
+
+const KIND_HINT: Record<EntryKind, StringKey> = {
+  trip: 'form.kindHint.trip',
+  reading: 'form.kindHint.reading',
+  refuel: 'form.kindHint.refuel',
 };
 
 /** Where a pre-filled value came from, shown next to its label. */
@@ -98,11 +102,20 @@ export function EntryForm({
   const consumption = useSettings((s) => s.consumption);
 
   const [id] = useState(() => editing?.id ?? newId());
-  const [draft, setDraft] = useState<Draft>(() =>
-    editing ? draftFromEntry(editing) : (initial ?? emptyDraft('trip', Date.now())),
-  );
+  const [draft, setDraft] = useState<Draft>(() => {
+    if (editing) return draftFromEntry(editing);
+    const d = initial ?? emptyDraft('trip', Date.now());
+    // A new refuel starts at the last fill-up's pump and grade; only when the
+    // opener left all three blank, so a pre-fill from elsewhere wins.
+    if (d.kind === 'refuel' && !d.station.trim() && !d.address.trim() && !d.grade) {
+      return { ...d, ...refuelDefaults(entries) };
+    }
+    return d;
+  });
   // Fixed at open: the fuel button's form is refuel-only, the "+" form is trip/range.
-  const [kinds] = useState(() => KINDS.filter((k) => formKinds(draft.kind).includes(k.value)));
+  const [kindValues] = useState(() => KINDS.filter((k) => formKinds(draft.kind).includes(k)));
+  // Labels at render time, so they follow the language.
+  const kinds = kindValues.map((value) => ({ value, label: t(KIND_LABEL[value]) }));
   const [markers, setMarkers] = useState<FormMarkers>(initialMarkers ?? {});
   const [showErrors, setShowErrors] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -116,7 +129,9 @@ export function EntryForm({
     () => (editing ? undefined : currentRangeKm(entries)),
     [editing, entries],
   );
-  const rangePlaceholder = lastRange === undefined ? 'km' : `last ${formatKm(lastRange)}`;
+  const km = t('form.unit.km');
+  const rangePlaceholder =
+    lastRange === undefined ? km : t('form.lastRange', { km: formatKm(lastRange) });
   const typedRange = parseNumber(draft.range);
   const liveUsed =
     lastRange !== undefined && typedRange !== undefined && lastRange - typedRange > 0
@@ -204,19 +219,21 @@ export function EntryForm({
           <Tap
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={t('form.close')}
             style={styles.close}
           >
             <CloseIcon />
           </Tap>
           <Text style={styles.title}>
-            {draft.kind === 'refuel'
-              ? editing
-                ? 'Edit refuel'
-                : 'New refuel'
-              : editing
-                ? 'Edit entry'
-                : 'New entry'}
+            {t(
+              draft.kind === 'refuel'
+                ? editing
+                  ? 'form.title.editRefuel'
+                  : 'form.title.newRefuel'
+                : editing
+                  ? 'form.title.edit'
+                  : 'form.title.new',
+            )}
           </Text>
           <View style={styles.close} />
         </View>
@@ -226,7 +243,7 @@ export function EntryForm({
             <Segmented options={kinds} value={draft.kind} onChange={(k) => set('kind', k)} />
           ) : null}
           <Text style={[styles.kindHint, kinds.length === 1 && styles.kindHintAlone]}>
-            {KIND_HINT[draft.kind]}
+            {t(KIND_HINT[draft.kind])}
           </Text>
         </View>
 
@@ -239,22 +256,24 @@ export function EntryForm({
             <>
               {draft.track && draft.track.length > 1 ? (
                 <View style={styles.mapBlock}>
-                  <SectionLabel>Route</SectionLabel>
+                  <SectionLabel>{t('form.route')}</SectionLabel>
                   <RouteMap track={draft.track} />
                   {gpsKm !== undefined ? (
-                    <Text style={styles.muted}>GPS distance {formatKm(gpsKm)}</Text>
+                    <Text style={styles.muted}>
+                      {t('form.gpsDistance', { km: formatKm(gpsKm) })}
+                    </Text>
                   ) : null}
                 </View>
               ) : null}
 
               <PlaceField
-                label="From"
+                label={t('form.from')}
                 value={draft.from}
                 onChange={(v) => set('from', v)}
                 exclude={othersThan(0)}
                 error={errors.from}
                 marker={markers.from}
-                placeholder="e.g. 4micro"
+                placeholder={t('form.fromPlaceholder')}
                 onSubmitEditing={() =>
                   draft.stops.length > 0 ? stopRefs.current[0]?.focus() : toRef.current?.focus()
                 }
@@ -266,7 +285,7 @@ export function EntryForm({
                   ref={(r) => {
                     stopRefs.current[i] = r;
                   }}
-                  label={`Stop ${i + 1}`}
+                  label={t('form.stop', { n: i + 1 })}
                   value={stop}
                   onChange={(v) =>
                     setDraft((d) => ({ ...d, stops: d.stops.map((s, j) => (j === i ? v : s)) }))
@@ -283,11 +302,11 @@ export function EntryForm({
                         setDraft((d) => ({ ...d, stops: d.stops.filter((_, j) => j !== i) }))
                       }
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove stop ${i + 1}`}
+                      accessibilityLabel={t('form.removeStopA11y', { n: i + 1 })}
                       hitSlop={14}
                       style={styles.removeStop}
                     >
-                      <Text style={styles.removeStopText}>Remove</Text>
+                      <Text style={styles.removeStopText}>{t('form.remove')}</Text>
                     </Tap>
                   }
                 />
@@ -302,27 +321,27 @@ export function EntryForm({
                   accessibilityRole="button"
                   style={[styles.dashed, styles.flex]}
                 >
-                  <Text style={styles.dashedText}>+ Add stop</Text>
+                  <Text style={styles.dashedText}>{t('form.addStop')}</Text>
                 </Tap>
                 <Tap
                   onPress={swap}
                   accessibilityRole="button"
-                  accessibilityLabel="Swap from and to (return trip)"
+                  accessibilityLabel={t('form.returnTripA11y')}
                   style={styles.dashed}
                 >
-                  <Text style={styles.dashedText}>↔ Return trip</Text>
+                  <Text style={styles.dashedText}>{t('form.returnTrip')}</Text>
                 </Tap>
               </View>
 
               <PlaceField
                 ref={toRef}
-                label="To"
+                label={t('form.to')}
                 value={draft.to}
                 onChange={(v) => set('to', v)}
                 exclude={othersThan(places.length - 1)}
                 error={errors.to}
                 marker={markers.to}
-                placeholder="e.g. charents school"
+                placeholder={t('form.toPlaceholder')}
                 onSubmitEditing={() => distanceRef.current?.focus()}
               />
 
@@ -330,8 +349,8 @@ export function EntryForm({
                 <View style={styles.flex}>
                   <Field
                     ref={distanceRef}
-                    label="Distance"
-                    suffix="km"
+                    label={t('form.distance')}
+                    suffix={km}
                     numeric
                     keyboardType="decimal-pad"
                     value={draft.distance}
@@ -343,8 +362,8 @@ export function EntryForm({
                 </View>
                 <View style={styles.flex}>
                   <Field
-                    label="Range left"
-                    suffix="km"
+                    label={t('form.rangeLeft')}
+                    suffix={km}
                     numeric
                     keyboardType="decimal-pad"
                     value={draft.range}
@@ -357,16 +376,18 @@ export function EntryForm({
               </View>
               {estimate ? (
                 <Text style={styles.estimate}>
-                  ≈ {formatLiters(Math.round(estimate.liters * 10) / 10)} · ≈{' '}
-                  {formatAmd(estimate.amd)} for this trip
+                  {t('form.estimate', {
+                    liters: formatLiters(Math.round(estimate.liters * 10) / 10),
+                    amd: formatAmd(estimate.amd),
+                  })}
                 </Text>
               ) : null}
             </>
           ) : draft.kind === 'reading' ? (
             <View style={styles.bigBlock}>
               <Field
-                label="Range left"
-                suffix="km"
+                label={t('form.rangeLeft')}
+                suffix={km}
                 numeric
                 big
                 keyboardType="decimal-pad"
@@ -379,7 +400,7 @@ export function EntryForm({
               />
               {liveUsed !== undefined ? (
                 <Text style={styles.live}>
-                  <Text style={styles.liveNum}>−{formatDelta(liveUsed)}</Text> since last reading
+                  <Text style={styles.liveNum}>−{formatDelta(liveUsed)}</Text> {t('form.sinceLast')}
                 </Text>
               ) : null}
             </View>
@@ -388,8 +409,8 @@ export function EntryForm({
               <View style={styles.pair}>
                 <View style={styles.flex}>
                   <Field
-                    label="Liters"
-                    suffix="L"
+                    label={t('form.liters')}
+                    suffix={t('form.unit.l')}
                     numeric
                     keyboardType="decimal-pad"
                     value={draft.liters}
@@ -400,7 +421,7 @@ export function EntryForm({
                 </View>
                 <View style={styles.flex}>
                   <Field
-                    label="Total paid"
+                    label={t('form.totalPaid')}
                     suffix="AMD"
                     numeric
                     keyboardType="number-pad"
@@ -412,15 +433,15 @@ export function EntryForm({
                 </View>
               </View>
               <Field
-                label="Range after (optional)"
-                suffix="km"
+                label={t('form.rangeAfter')}
+                suffix={km}
                 numeric
                 keyboardType="decimal-pad"
                 value={draft.range}
                 onChangeText={(v) => set('range', v)}
                 error={errors.range}
                 marker={markers.range}
-                placeholder="km"
+                placeholder={km}
               />
               <StationField
                 value={draft.station}
@@ -429,31 +450,19 @@ export function EntryForm({
                   setDraft((d) => ({ ...d, station: name, address: address ?? d.address }))
                 }
               />
-              <Field
-                label="Address (optional)"
+              <AddressField
                 value={draft.address}
-                onChangeText={(v) => set('address', v)}
-                placeholder="e.g. Komitas 5"
-                autoCapitalize="words"
+                station={draft.station}
+                onChange={(v) => set('address', v)}
               />
-              <View style={styles.gradeBlock}>
-                <SectionLabel>Fuel grade (optional)</SectionLabel>
-                <View style={styles.grades}>
-                  {FUEL_GRADES.map((g) => (
-                    <Chip
-                      key={g.value}
-                      label={g.label}
-                      active={draft.grade === g.value}
-                      onPress={() =>
-                        setDraft((d) => ({
-                          ...d,
-                          grade: d.grade === g.value ? undefined : g.value,
-                        }))
-                      }
-                    />
-                  ))}
-                </View>
-              </View>
+              <Dropdown
+                label={t('form.gradeLabel')}
+                value={draft.grade}
+                options={FUEL_GRADES}
+                onChange={(g) => set('grade', g)}
+                placeholder={t('form.notSet')}
+                clearLabel={t('form.notSet')}
+              />
             </>
           )}
 
@@ -465,12 +474,12 @@ export function EntryForm({
           <View style={styles.divider} />
 
           <Field
-            label="Note (optional)"
+            label={t('form.note')}
             value={draft.note}
             onChangeText={(v) => set('note', v)}
             multiline
             textAlignVertical="top"
-            placeholder="Anything worth remembering"
+            placeholder={t('form.notePlaceholder')}
           />
         </ScrollView>
 
@@ -479,11 +488,19 @@ export function EntryForm({
           <View style={styles.footerRow}>
             {editing ? (
               <View style={styles.deleteWrap}>
-                <Button label="Delete" variant="danger" onPress={() => setConfirmDelete(true)} />
+                <Button
+                  label={t('form.delete')}
+                  variant="danger"
+                  onPress={() => setConfirmDelete(true)}
+                />
               </View>
             ) : null}
             <View style={styles.flex}>
-              <Button label={editing ? 'Save changes' : 'Save'} onPress={save} dim={!result.ok} />
+              <Button
+                label={editing ? t('form.saveChanges') : t('common.save')}
+                onPress={save}
+                dim={!result.ok}
+              />
             </View>
           </View>
         </View>
@@ -491,9 +508,9 @@ export function EntryForm({
 
       <ConfirmSheet
         visible={confirmDelete}
-        title="Delete this entry?"
-        body="This can’t be undone."
-        confirmLabel="Delete"
+        title={t('form.deleteTitle')}
+        body={t('form.deleteBody')}
+        confirmLabel={t('form.delete')}
         danger
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
@@ -562,8 +579,6 @@ const styles = StyleSheet.create({
   dashedText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
   removeStop: { paddingHorizontal: spacing.xs },
   removeStopText: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '700' },
-  gradeBlock: { gap: spacing.sm },
-  grades: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   atMarker: {
     position: 'absolute',
     left: 52,

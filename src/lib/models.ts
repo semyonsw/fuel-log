@@ -8,14 +8,25 @@
  * retired model disappears without an app update.
  */
 
+import { t, type StringKey } from '../i18n';
+
 export type GeminiModel = { id: string; label: string; note: string };
 
+/** Product names stay as Google writes them; the note is a getter so it follows the language. */
+const model = (id: string, label: string, noteKey: StringKey): GeminiModel => ({
+  id,
+  label,
+  get note() {
+    return t(noteKey);
+  },
+});
+
 export const GEMINI_MODELS: GeminiModel[] = [
-  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', note: 'Fastest, lowest cost' },
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'Most capable Flash' },
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', note: 'Previous Flash' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', note: 'Older Flash-Lite' },
-  { id: 'gemini-4-argon', label: 'Gemini 4 Argon', note: 'Flagship reasoning, slower' },
+  model('gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 'form.model.fastest'),
+  model('gemini-3.8-flash', 'Gemini 3.8 Flash', 'form.model.capable'),
+  model('gemini-3.6-flash', 'Gemini 3.6 Flash', 'form.model.previous'),
+  model('gemini-3.1-flash-lite', 'Gemini 3.1 Flash-Lite', 'form.model.olderLite'),
+  model('gemini-4-argon', 'Gemini 4 Argon', 'form.model.flagship'),
 ];
 
 export const DEFAULT_MODEL = GEMINI_MODELS[0].id;

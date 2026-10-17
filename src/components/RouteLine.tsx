@@ -10,6 +10,7 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
+import { t } from '../i18n';
 import { colors, fonts, spacing } from '../theme';
 
 export function RouteLine({ from, stops, to }: { from: string; stops: string[]; to: string }) {
@@ -19,7 +20,7 @@ export function RouteLine({ from, stops, to }: { from: string; stops: string[]; 
     ...(to ? [{ name: to, role: 'to' as const }] : []),
   ];
 
-  if (points.length === 0) return <Text style={styles.empty}>Trip</Text>;
+  if (points.length === 0) return <Text style={styles.empty}>{t('components.route.empty')}</Text>;
 
   return (
     <View style={styles.wrap}>

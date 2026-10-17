@@ -86,17 +86,20 @@ import { formatAmd, parseNumber } from '../lib/numbers';
 import { FUEL_GRADES } from '../lib/stations';
 import { takePhoto, type Photo } from '../services/photo';
 import { saveApiKey } from '../services/secrets';
+import { plural, t } from '../i18n';
 import { useChats } from '../state/chats';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { EntryKind } from '../types';
 
-const KIND_TITLE: Record<EntryKind, string> = {
-  reading: 'Range reading',
-  trip: 'Trip',
-  refuel: 'Refuel',
-};
+/** A function, not a table, so the title follows the language at render time. */
+const kindTitle = (kind: EntryKind): string =>
+  kind === 'reading'
+    ? t('chat.kind.reading')
+    : kind === 'trip'
+      ? t('chat.kind.trip')
+      : t('chat.kind.refuel');
 
 export function ChatScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
@@ -149,11 +152,10 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
     setNotice('');
     try {
       const p = await takePhoto(source);
-      if (p === 'denied')
-        setNotice('Camera permission is off for Fuel Log. Allow it in Android settings.');
+      if (p === 'denied') setNotice(t('chat.cameraDenied'));
       else if (p) setPending(p);
     } catch {
-      setNotice('Could not open the photo.');
+      setNotice(t('chat.photoFailed'));
     }
   };
 
@@ -220,7 +222,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
       ? {
           id: newId(),
           role: 'model',
-          text: res.reply.reply || (res.reply.entries.length ? 'Check and approve:' : ''),
+          text: res.reply.reply || (res.reply.entries.length ? t('chat.checkAndApprove') : ''),
           at: Date.now(),
           ...(res.reply.entries.length ? { proposals: res.reply.entries } : {}),
           ...(res.reply.confidence ? { confidence: res.reply.confidence } : {}),
@@ -261,18 +263,18 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
           <Tap
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Close chat"
+            accessibilityLabel={t('chat.close')}
             style={styles.iconBtn}
           >
             <CloseIcon />
           </Tap>
           <Text style={styles.title} numberOfLines={1}>
-            {view === 'history' ? 'Chats' : (chat?.title ?? 'AI chat')}
+            {view === 'history' ? t('chat.titleHistory') : (chat?.title ?? t('chat.titleDefault'))}
           </Text>
           <Tap
             onPress={() => setView(view === 'history' ? 'thread' : 'history')}
             accessibilityRole="button"
-            accessibilityLabel={view === 'history' ? 'Back to chat' : 'Chat history'}
+            accessibilityLabel={view === 'history' ? t('chat.backToChat') : t('chat.history')}
             style={styles.iconBtn}
           >
             <HistoryIcon color={view === 'history' ? colors.accent : colors.text} />
@@ -280,7 +282,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
           <Tap
             onPress={startNew}
             accessibilityRole="button"
-            accessibilityLabel="New chat"
+            accessibilityLabel={t('chat.new')}
             style={styles.iconBtn}
           >
             <PlusIcon size={20} color={colors.text} />
@@ -291,7 +293,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
           <Tap
             onPress={() => setModelSheet(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Model: ${modelLabel(model)}. Change model or API key`}
+            accessibilityLabel={t('chat.modelA11y', { model: modelLabel(model) })}
             style={styles.modelPill}
           >
             <SparklesIcon size={16} color={colors.accent} />
@@ -326,16 +328,10 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
                   <View style={styles.emptyBadge}>
                     <SparklesIcon size={30} color={colors.accent} />
                   </View>
-                  <Text style={styles.emptyTitle}>
-                    Tell me what happened, or send a dashboard photo
-                  </Text>
-                  <Text style={styles.emptyText}>
-                    For example: “I bought 15 L for 9000 AMD, my fuel was 15 km, now it shows 250
-                    km.” You get the entries to check, then one Approve saves them. You can also ask
-                    about your log.
-                  </Text>
+                  <Text style={styles.emptyTitle}>{t('chat.emptyTitle')}</Text>
+                  <Text style={styles.emptyText}>{t('chat.emptyText')}</Text>
                   {!apiKey ? (
-                    <Button label="Add your Gemini API key" onPress={() => setKeySheet(true)} />
+                    <Button label={t('chat.addGeminiKey')} onPress={() => setKeySheet(true)} />
                   ) : null}
                 </View>
               }
@@ -352,13 +348,13 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
                 sending ? (
                   <View style={styles.typing}>
                     <ActivityIndicator color={colors.accent} />
-                    <Text style={styles.typingText}>Gemini is thinking…</Text>
+                    <Text style={styles.typingText}>{t('chat.thinking')}</Text>
                     <Tap
                       onPress={() => abort.current?.abort()}
                       accessibilityRole="button"
                       style={styles.cancel}
                     >
-                      <Text style={styles.cancelText}>Cancel</Text>
+                      <Text style={styles.cancelText}>{t('common.cancel')}</Text>
                     </Tap>
                   </View>
                 ) : null
@@ -369,11 +365,11 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
             {pending ? (
               <View style={styles.pending}>
                 <Image source={{ uri: pending.uri }} style={styles.pendingImg} />
-                <Text style={styles.pendingText}>Photo ready to send</Text>
+                <Text style={styles.pendingText}>{t('chat.photoReady')}</Text>
                 <Tap
                   onPress={() => setPending(null)}
                   accessibilityRole="button"
-                  accessibilityLabel="Remove photo"
+                  accessibilityLabel={t('chat.removePhoto')}
                   style={styles.iconBtn}
                 >
                   <CloseIcon size={14} color={colors.muted} />
@@ -384,7 +380,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
               <Tap
                 onPress={() => attach('camera')}
                 accessibilityRole="button"
-                accessibilityLabel="Take a photo"
+                accessibilityLabel={t('chat.takePhoto')}
                 style={styles.iconBtn}
               >
                 <CameraIcon color={colors.accent} />
@@ -392,7 +388,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
               <Tap
                 onPress={() => attach('gallery')}
                 accessibilityRole="button"
-                accessibilityLabel="Pick a photo"
+                accessibilityLabel={t('chat.pickPhoto')}
                 style={styles.iconBtn}
               >
                 <GalleryIcon color={colors.accent} />
@@ -400,19 +396,19 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
               <TextInput
                 value={text}
                 onChangeText={setText}
-                placeholder="Message"
+                placeholder={t('chat.message')}
                 placeholderTextColor={colors.muted}
                 selectionColor={colors.accent}
                 cursorColor={colors.accent}
                 multiline
                 style={styles.input}
-                accessibilityLabel="Message"
+                accessibilityLabel={t('chat.message')}
               />
               <Tap
                 onPress={send}
                 disabled={sending || (!text.trim() && !pending)}
                 accessibilityRole="button"
-                accessibilityLabel="Send"
+                accessibilityLabel={t('chat.send')}
                 style={styles.send}
               >
                 <SendIcon />
@@ -433,9 +429,9 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
       <KeySheet visible={keySheet} onClose={() => setKeySheet(false)} />
       <ConfirmSheet
         visible={deleting !== null}
-        title="Delete this chat?"
-        body="Its messages and readings are removed. Entries you saved from it stay."
-        confirmLabel="Delete"
+        title={t('chat.deleteTitle')}
+        body={t('chat.deleteBody')}
+        confirmLabel={t('chat.delete')}
         danger
         onCancel={() => setDeleting(null)}
         onConfirm={() => {
@@ -475,7 +471,7 @@ function Bubble({
           photo ? (
             <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="cover" />
           ) : (
-            <Text style={styles.photoGone}>📷 Photo (not kept)</Text>
+            <Text style={styles.photoGone}>{t('chat.photoGone')}</Text>
           )
         ) : null}
         {msg.text ? (
@@ -523,32 +519,32 @@ function Proposals({
   return (
     <View style={[styles.card, saved && styles.cardSaved]}>
       {lowConfidence && !saved ? (
-        <Text style={styles.cardWarn}>Gemini was not sure about the photo. Check the numbers.</Text>
+        <Text style={styles.cardWarn}>{t('chat.lowConfidence')}</Text>
       ) : null}
       {proposals.map((p, i) => (
         <View key={i} style={[styles.prop, i > 0 && styles.propDivider]}>
           <View style={styles.cardHead}>
             <Text style={styles.cardTitle}>
               {proposals.length > 1 ? `${i + 1}. ` : ''}
-              {KIND_TITLE[p.kind]}
+              {kindTitle(p.kind)}
             </Text>
             {!saved && proposals.length > 1 ? (
               <Tap
                 onPress={() => remove(i)}
                 accessibilityRole="button"
-                accessibilityLabel={`Remove ${KIND_TITLE[p.kind]}`}
+                accessibilityLabel={t('chat.removeKindA11y', { kind: kindTitle(p.kind) })}
                 hitSlop={10}
               >
-                <Text style={styles.removeText}>Remove</Text>
+                <Text style={styles.removeText}>{t('chat.remove')}</Text>
               </Tap>
             ) : null}
           </View>
           {!saved ? (
             <Segmented
               options={[
-                { value: 'trip' as EntryKind, label: 'Trip' },
-                { value: 'reading' as EntryKind, label: 'Range' },
-                { value: 'refuel' as EntryKind, label: 'Refuel' },
+                { value: 'trip' as EntryKind, label: t('chat.seg.trip') },
+                { value: 'reading' as EntryKind, label: t('chat.seg.reading') },
+                { value: 'refuel' as EntryKind, label: t('chat.seg.refuel') },
               ]}
               value={p.kind}
               onChange={(kind) => edit(i, { kind })}
@@ -561,16 +557,17 @@ function Proposals({
       ))}
       {saved ? (
         <Text style={styles.savedText}>
-          ✓ Saved to the log{proposals.length > 1 ? ` (${proposals.length} entries)` : ''}. Edit
-          them there any time.
+          {proposals.length > 1 ? plural('chat.savedN', proposals.length) : t('chat.saved')}
         </Text>
       ) : (
         <>
           <Button
-            label={proposals.length > 1 ? `Approve ${proposals.length} entries` : 'Approve'}
+            label={
+              proposals.length > 1 ? plural('chat.approveN', proposals.length) : t('chat.approve')
+            }
             onPress={onApprove}
           />
-          <Text style={styles.cardFoot}>Approve saves these to the log exactly as shown.</Text>
+          <Text style={styles.cardFoot}>{t('chat.approveFoot')}</Text>
         </>
       )}
     </View>
@@ -589,7 +586,7 @@ function ProposalFields({
   const range = (label: string) => (
     <NumberRow
       label={label}
-      unit="km"
+      unit={t('chat.unit.km')}
       value={p.rangeKm}
       max={MAX_RANGE_KM}
       locked={locked}
@@ -601,37 +598,46 @@ function ProposalFields({
       {p.kind === 'trip' ? (
         <>
           <TextRow
-            label="From"
+            label={t('chat.field.from')}
             value={p.from}
             locked={locked}
             onChange={(from) => onEdit({ from })}
           />
-          {p.stops.length ? <Text style={styles.cardNote}>via {p.stops.join(' → ')}</Text> : null}
-          <TextRow label="To" value={p.to} locked={locked} onChange={(to) => onEdit({ to })} />
+          {p.stops.length ? (
+            <Text style={styles.cardNote}>
+              {t('chat.field.via', { stops: p.stops.join(' → ') })}
+            </Text>
+          ) : null}
+          <TextRow
+            label={t('chat.field.to')}
+            value={p.to}
+            locked={locked}
+            onChange={(to) => onEdit({ to })}
+          />
           <NumberRow
-            label="Distance"
-            unit="km"
+            label={t('chat.field.distance')}
+            unit={t('chat.unit.km')}
             value={p.distanceKm}
             max={MAX_TRIP_KM}
             locked={locked}
             onChange={(distanceKm) => onEdit({ distanceKm })}
           />
-          {range('Range left')}
+          {range(t('chat.field.rangeLeft'))}
         </>
       ) : p.kind === 'reading' ? (
-        range('Range left')
+        range(t('chat.field.rangeLeft'))
       ) : (
         <>
           <NumberRow
-            label="Liters"
-            unit="L"
+            label={t('chat.field.liters')}
+            unit={t('chat.unit.l')}
             value={p.liters}
             max={MAX_LITERS}
             locked={locked}
             onChange={(liters) => onEdit({ liters })}
           />
           <NumberRow
-            label="Total paid"
+            label={t('chat.field.totalPaid')}
             unit="AMD"
             value={p.priceAmd}
             max={MAX_PRICE_AMD}
@@ -641,17 +647,19 @@ function ProposalFields({
             onChange={(priceAmd) => onEdit({ priceAmd })}
           />
           {p.liters && p.priceAmd ? (
-            <Text style={styles.cardNote}>{formatAmd(p.priceAmd / p.liters)}/L</Text>
+            <Text style={styles.cardNote}>
+              {t('chat.field.perLiter', { price: formatAmd(p.priceAmd / p.liters) })}
+            </Text>
           ) : null}
-          {range('Range after')}
+          {range(t('chat.field.rangeAfter'))}
           <TextRow
-            label="Station"
+            label={t('chat.field.station')}
             value={p.station}
             locked={locked}
             onChange={(station) => onEdit({ station })}
           />
           <TextRow
-            label="Address"
+            label={t('chat.field.address')}
             value={p.address}
             locked={locked}
             onChange={(address) => onEdit({ address })}
@@ -722,7 +730,7 @@ function ClockRow({
   const bad = raw.trim() !== '' && parseClock(raw) === null;
   return (
     <View style={styles.numRow}>
-      <Text style={styles.numLabel}>Time</Text>
+      <Text style={styles.numLabel}>{t('chat.field.time')}</Text>
       <TextInput
         value={raw}
         onChangeText={(v) => {
@@ -731,11 +739,11 @@ function ClockRow({
           else if (parseClock(v)) onChange(parseClock(v));
         }}
         editable={!locked}
-        placeholder="now"
+        placeholder={t('chat.field.timeNow')}
         placeholderTextColor={colors.muted}
         keyboardType="numbers-and-punctuation"
         selectionColor={colors.accent}
-        accessibilityLabel="Time, HH:MM. Empty means now"
+        accessibilityLabel={t('chat.field.timeA11y')}
         style={[styles.numInput, styles.timeInput, bad && styles.numInputBad]}
       />
     </View>
@@ -845,10 +853,10 @@ function History({
       ListHeaderComponent={
         <Tap onPress={onNew} accessibilityRole="button" style={styles.newChat}>
           <PlusIcon size={18} color={colors.accent} />
-          <Text style={styles.newChatText}>New chat</Text>
+          <Text style={styles.newChatText}>{t('chat.new')}</Text>
         </Tap>
       }
-      ListEmptyComponent={<Text style={styles.emptyText}>No chats yet.</Text>}
+      ListEmptyComponent={<Text style={styles.emptyText}>{t('chat.noChats')}</Text>}
       renderItem={({ item }) => (
         <Tap
           onPress={() => onOpen(item.id)}
@@ -861,13 +869,13 @@ function History({
             </Text>
             <Text style={styles.historyMeta}>
               {dayLabel(dayKey(item.updatedAt), Date.now())} {formatTime(item.updatedAt)} ·{' '}
-              {item.messages.length} messages
+              {plural('chat.messages', item.messages.length)}
             </Text>
           </View>
           <Tap
             onPress={() => onDelete(item.id)}
             accessibilityRole="button"
-            accessibilityLabel={`Delete chat ${item.title}`}
+            accessibilityLabel={t('chat.deleteChatA11y', { title: item.title })}
             style={styles.iconBtn}
           >
             <TrashIcon size={20} color={colors.muted} />
@@ -909,11 +917,9 @@ function ModelSheet({
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <Text style={styles.sheetTitle}>Model</Text>
+      <Text style={styles.sheetTitle}>{t('chat.modelTitle')}</Text>
       <Text style={styles.sheetBody}>
-        {checking
-          ? 'Checking which models your key can use…'
-          : 'Current Gemini models that read photos.'}
+        {checking ? t('chat.modelChecking') : t('chat.modelIntro')}
       </Text>
       {models.map((m) => {
         const on = m.id === current;
@@ -942,7 +948,7 @@ function ModelSheet({
       })}
       <Tap onPress={onKey} accessibilityRole="button" style={styles.keyRow}>
         <KeyIcon size={20} color={colors.accent} />
-        <Text style={styles.keyRowText}>{apiKey ? 'Change API key' : 'Add API key'}</Text>
+        <Text style={styles.keyRowText}>{apiKey ? t('chat.changeKey') : t('chat.addKey')}</Text>
       </Tap>
     </Sheet>
   );
@@ -956,14 +962,9 @@ function KeySheet({ visible, onClose }: { visible: boolean; onClose: () => void 
   }, [visible, apiKey]);
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <Text style={styles.sheetTitle}>Gemini API key</Text>
-      <Text style={styles.sheetBody}>
-        Get a key at aistudio.google.com. It is stored on this phone and in your backup file.
-      </Text>
-      <Text style={styles.privacy}>
-        Privacy: photos you send and your log (trips, places, refuels) go to Google Gemini to
-        answer. Photos are not kept on this phone.
-      </Text>
+      <Text style={styles.sheetTitle}>{t('chat.keyTitle')}</Text>
+      <Text style={styles.sheetBody}>{t('chat.keyBody')}</Text>
+      <Text style={styles.privacy}>{t('chat.keyPrivacy')}</Text>
       <TextInput
         value={value}
         onChangeText={setValue}
@@ -973,16 +974,16 @@ function KeySheet({ visible, onClose }: { visible: boolean; onClose: () => void 
         autoCorrect={false}
         secureTextEntry
         selectionColor={colors.accent}
-        accessibilityLabel="Gemini API key"
+        accessibilityLabel={t('chat.keyTitle')}
         style={styles.keyInput}
       />
       <View style={styles.sheetActions}>
         <View style={styles.flex}>
-          <Button label="Cancel" variant="ghost" onPress={onClose} />
+          <Button label={t('common.cancel')} variant="ghost" onPress={onClose} />
         </View>
         <View style={styles.flex}>
           <Button
-            label="Save key"
+            label={t('chat.saveKey')}
             dim={!value.trim()}
             onPress={() => {
               if (!value.trim()) return;

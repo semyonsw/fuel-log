@@ -15,6 +15,7 @@
  * they are shown under the input itself, not in a banner.
  */
 
+import { t } from '../i18n';
 import type { Entry, EntryKind, FuelGrade, TrackPoint } from '../types';
 import { parseNumber } from './numbers';
 import { normalizePlace } from './places';
@@ -114,7 +115,8 @@ export function draftFromEntry(e: Entry): Draft {
   return draft;
 }
 
-const NOT_A_NUMBER = 'Not a number';
+// A function, not a constant: the wording follows the language at call time.
+const notANumber = () => t('form.err.notNumber');
 
 type Parsed = { value?: number; error?: string };
 
@@ -122,7 +124,7 @@ type Parsed = { value?: number; error?: string };
 function optional(raw: string): Parsed {
   if (raw.trim() === '') return {};
   const value = parseNumber(raw);
-  return value === undefined ? { error: NOT_A_NUMBER } : { value };
+  return value === undefined ? { error: notANumber() } : { value };
 }
 
 /** Required and strictly positive — zero liters or a free tank is a slip, not data. */
@@ -145,8 +147,8 @@ export function validateDraft(
     const from = normalizePlace(d.from);
     const to = normalizePlace(d.to);
     const distance = optional(d.distance);
-    if (!from) errors.from = 'Where did you start?';
-    if (!to) errors.to = 'Where did you end?';
+    if (!from) errors.from = t('form.err.from');
+    if (!to) errors.to = t('form.err.to');
     if (distance.error) errors.distance = distance.error;
     if (range.error) errors.range = range.error;
     if (Object.keys(errors).length > 0) return { ok: false, errors };
@@ -167,13 +169,13 @@ export function validateDraft(
 
   if (d.kind === 'reading') {
     if (range.error) errors.range = range.error;
-    else if (range.value === undefined) errors.range = 'Enter the range left';
+    else if (range.value === undefined) errors.range = t('form.err.range');
     if (range.value === undefined) return { ok: false, errors };
     return { ok: true, entry: { ...base, kind: 'reading', rangeKm: range.value } };
   }
 
-  const liters = positive(d.liters, 'Enter liters');
-  const price = positive(d.price, 'Enter the price');
+  const liters = positive(d.liters, t('form.err.liters'));
+  const price = positive(d.price, t('form.err.price'));
   if (liters.error) errors.liters = liters.error;
   if (price.error) errors.price = price.error;
   if (range.error) errors.range = range.error;
@@ -196,14 +198,17 @@ export function validateDraft(
   };
 }
 
-const FIELD_NAMES: Record<keyof DraftErrors, string> = {
-  from: 'From',
-  to: 'To',
-  distance: 'Distance',
-  range: 'Range left',
-  liters: 'Liters',
-  price: 'Total paid',
-};
+/** The same words as the form's labels, so the hint names what the user sees. */
+const FIELD_KEYS = {
+  from: 'form.from',
+  to: 'form.to',
+  distance: 'form.distance',
+  range: 'form.rangeLeft',
+  liters: 'form.liters',
+  price: 'form.totalPaid',
+} as const satisfies Record<keyof DraftErrors, string>;
+
+const fieldName = (k: keyof DraftErrors) => t(FIELD_KEYS[k]);
 
 /**
  * The one line above Save that says why it is dim: what is missing, then what
@@ -211,11 +216,12 @@ const FIELD_NAMES: Record<keyof DraftErrors, string> = {
  */
 export function saveHint(errors: DraftErrors): string {
   const keys = Object.keys(errors) as (keyof DraftErrors)[];
-  const bad = keys.filter((k) => errors[k] === NOT_A_NUMBER).map((k) => FIELD_NAMES[k]);
-  const need = keys.filter((k) => errors[k] !== NOT_A_NUMBER).map((k) => FIELD_NAMES[k]);
+  const nan = notANumber();
+  const bad = keys.filter((k) => errors[k] === nan).map(fieldName);
+  const need = keys.filter((k) => errors[k] !== nan).map(fieldName);
   return [
-    need.length ? `To save, fill in: ${need.join(', ')}` : '',
-    bad.length ? `Check: ${bad.join(', ')}` : '',
+    need.length ? t('form.save.need', { fields: need.join(', ') }) : '',
+    bad.length ? t('form.save.check', { fields: bad.join(', ') }) : '',
   ]
     .filter(Boolean)
     .join(' · ');

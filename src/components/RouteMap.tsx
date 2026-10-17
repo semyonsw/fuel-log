@@ -5,24 +5,42 @@
  * billing, OpenStreetMap data (Armenia is well mapped there). Tiles need a
  * connection; if the style cannot load, the same route is drawn as a plain
  * line on a blank grid instead, so the route is never missing.
+ *
+ * A GPS trip's duration rides in a pill in the corner the route avoids. The
+ * corner is found on the offline projection of the same track at the same
+ * size and camera padding: the map's Web Mercator fit differs from it only
+ * slightly at city scale, and the map's own camera is never queried. On the
+ * map the bottom-right belongs to the attribution button; on the grid the
+ * bottom-left belongs to the offline note.
  */
 
 import { Camera, GeoJSONSource, Layer, Map } from '@maplibre/maplibre-react-native';
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 
-import { trackBounds } from '../lib/geo';
+import { t } from '../i18n';
+import { trackDurationMs } from '../lib/duration';
+import { emptiestCorner, projectTrack, trackBounds } from '../lib/geo';
 import { colors, fonts, radius, spacing } from '../theme';
 import type { TrackPoint } from '../types';
-import { TrackPreview } from './TrackPreview';
+import { DurationBadge, TrackPreview } from './TrackPreview';
 
 export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
 const HEIGHT = 220;
+const CAMERA_PADDING = 32;
 
 export function RouteMap({ track }: { track: TrackPoint[] }) {
   const [failed, setFailed] = useState(false);
   const [width, setWidth] = useState(0);
   const bounds = useMemo(() => trackBounds(track), [track]);
+  const durationMs = useMemo(() => trackDurationMs(track), [track]);
+  const mapCorner = useMemo(
+    () =>
+      width > 0
+        ? emptiestCorner(projectTrack(track, width, HEIGHT, CAMERA_PADDING), width, HEIGHT, ['br'])
+        : undefined,
+    [track, width],
+  );
   const line = useMemo(
     () => ({
       type: 'Feature' as const,
@@ -53,42 +71,64 @@ export function RouteMap({ track }: { track: TrackPoint[] }) {
       {failed ? (
         width > 0 ? (
           <>
-            <TrackPreview track={track} width={width} height={HEIGHT} grid={20} strokeWidth={3} />
-            <Text style={styles.offline}>Offline: map unavailable, route shown on a grid</Text>
+            <TrackPreview
+              track={track}
+              width={width}
+              height={HEIGHT}
+              grid={20}
+              strokeWidth={3}
+              durationMs={durationMs}
+              avoid={['bl']}
+              badgeSize="md"
+            />
+            <Text style={styles.offline}>{t('app.map.offline')}</Text>
           </>
         ) : null
       ) : (
-        <Map
-          style={styles.map}
-          mapStyle={MAP_STYLE}
-          attribution
-          logo={false}
-          onDidFailLoadingMap={() => setFailed(true)}
-        >
-          <Camera
-            initialViewState={{ bounds, padding: { top: 32, bottom: 32, left: 32, right: 32 } }}
-          />
-          <GeoJSONSource id="route" data={line}>
-            <Layer
-              id="route-line"
-              type="line"
-              paint={{ 'line-color': colors.accent, 'line-width': 4 }}
-              layout={{ 'line-join': 'round', 'line-cap': 'round' }}
-            />
-          </GeoJSONSource>
-          <GeoJSONSource id="ends" data={ends}>
-            <Layer
-              id="ends-dot"
-              type="circle"
-              paint={{
-                'circle-radius': 6,
-                'circle-color': ['case', ['==', ['get', 'end'], 0], colors.bg, colors.accent],
-                'circle-stroke-color': colors.accent,
-                'circle-stroke-width': 2.5,
+        <>
+          <Map
+            style={styles.map}
+            mapStyle={MAP_STYLE}
+            attribution
+            logo={false}
+            onDidFailLoadingMap={() => setFailed(true)}
+          >
+            <Camera
+              initialViewState={{
+                bounds,
+                padding: {
+                  top: CAMERA_PADDING,
+                  bottom: CAMERA_PADDING,
+                  left: CAMERA_PADDING,
+                  right: CAMERA_PADDING,
+                },
               }}
             />
-          </GeoJSONSource>
-        </Map>
+            <GeoJSONSource id="route" data={line}>
+              <Layer
+                id="route-line"
+                type="line"
+                paint={{ 'line-color': colors.accent, 'line-width': 4 }}
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+              />
+            </GeoJSONSource>
+            <GeoJSONSource id="ends" data={ends}>
+              <Layer
+                id="ends-dot"
+                type="circle"
+                paint={{
+                  'circle-radius': 6,
+                  'circle-color': ['case', ['==', ['get', 'end'], 0], colors.bg, colors.accent],
+                  'circle-stroke-color': colors.accent,
+                  'circle-stroke-width': 2.5,
+                }}
+              />
+            </GeoJSONSource>
+          </Map>
+          {durationMs !== undefined && mapCorner ? (
+            <DurationBadge durationMs={durationMs} corner={mapCorner} size="md" />
+          ) : null}
+        </>
       )}
     </View>
   );

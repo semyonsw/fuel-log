@@ -22,9 +22,12 @@
  * A drive at 23:40 belongs to the evening the user lived, so day keys, labels and
  * period starts are all local time, and day arithmetic goes through `Date`
  * rather than 86,400,000 ms so a DST night does not shift a week boundary.
- * Names are written out by hand because Hermes' `Intl` is incomplete on Android.
+ * Names are written out by hand because Hermes' `Intl` is incomplete on Android,
+ * one table per language in `i18n/strings/lib.ts`, read at call time so a
+ * language switch is picked up by the next render.
  */
 
+import { t, type StringKey } from '../i18n';
 import type { Entry, TripEntry } from '../types';
 
 /** Newest first; equal times fall back to id so a list never reshuffles on re-render. */
@@ -85,33 +88,24 @@ export function dayKey(at: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_NAMES = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/** "Today", "Yesterday", "Thu, 15 Oct", or "Thu, 15 Oct 2025" for another year. */
+/**
+ * "Today", "Yesterday", "Thu, 15 Oct", or "Thu, 15 Oct 2025" for another year,
+ * in the current language ("Чт, 15 окт", "Հնգ, 15 հոկ").
+ */
 export function dayLabel(key: string, now: number): string {
-  if (key === dayKey(now)) return 'Today';
+  if (key === dayKey(now)) return t('common.today');
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (key === dayKey(yesterday.getTime())) return 'Yesterday';
+  if (key === dayKey(yesterday.getTime())) return t('common.yesterday');
 
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!match) return key;
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const label = `${DAY_NAMES[date.getDay()]}, ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
+  const label = t('lib.date.day', {
+    weekday: t(`lib.weekday.${date.getDay()}` as StringKey),
+    date: date.getDate(),
+    month: t(`lib.month.${date.getMonth()}` as StringKey),
+  });
   return date.getFullYear() === new Date(now).getFullYear()
     ? label
     : `${label} ${date.getFullYear()}`;

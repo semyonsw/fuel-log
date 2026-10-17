@@ -56,7 +56,7 @@ function Line({
   );
 }
 
-/** Log tab: a clock beside list lines — the timeline. */
+/** History tab: a clock beside list lines — the timeline. */
 export function LogTabIcon(p: IconProps) {
   return (
     <Line {...p}>
@@ -75,6 +75,16 @@ export function SummaryTabIcon(p: IconProps) {
       <Path d="M12 17.5l4-5" />
       <Path d="M6.4 11.6l.9.9M12 8.6v1.3M17.6 11.6l-.9.9" />
       <Path d="M3 21h18" />
+    </Line>
+  );
+}
+
+/** Settings tab: a gear around a hub. */
+export function SettingsTabIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Circle cx="12" cy="12" r="3" />
+      <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </Line>
   );
 }

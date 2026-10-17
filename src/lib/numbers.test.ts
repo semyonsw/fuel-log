@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { setLang } from '../i18n';
 
 import { formatAmd, formatKm, formatLiters, parseNumber } from './numbers';
 
@@ -59,5 +61,31 @@ describe('formatting', () => {
     expect(formatAmd(14999.6)).toBe('15 000 AMD');
     expect(formatAmd(0)).toBe('0 AMD');
     expect(formatAmd(-2500)).toBe('-2 500 AMD');
+  });
+});
+
+describe('units follow the language', () => {
+  afterEach(() => setLang('en'));
+
+  it('Russian and Armenian km and litres; AMD stays Latin', () => {
+    setLang('ru');
+    expect([formatKm(22.5), formatLiters(30), formatAmd(15000)]).toEqual([
+      '22.5 км',
+      '30 л',
+      '15 000 AMD',
+    ]);
+    setLang('hy');
+    expect([formatKm(107), formatLiters(32.47), formatAmd(9000)]).toEqual([
+      '107 կմ',
+      '32.47 լ',
+      '9 000 AMD',
+    ]);
+  });
+
+  it('parses a unit typed as the screen shows it, in any language', () => {
+    expect(parseNumber('33,4 км')).toBe(33.4);
+    expect(parseNumber('107կմ')).toBe(107);
+    expect(parseNumber('30 л')).toBe(30);
+    expect(parseNumber('30լ')).toBe(30);
   });
 });

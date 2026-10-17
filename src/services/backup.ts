@@ -22,6 +22,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { readAsStringAsync, StorageAccessFramework as SAF } from 'expo-file-system/legacy';
 
 import pkg from '../../package.json';
+import { t } from '../i18n';
 import {
   backupFileName,
   buildBackup,
@@ -96,7 +97,7 @@ async function writeOnce(): Promise<boolean> {
       lastBackup: {
         at: now,
         ok: false,
-        error: 'Could not write to the backup folder. Pick it again.',
+        error: t('services.backup.writeFailed'),
       },
     });
     return false;
@@ -142,7 +143,7 @@ export async function pickBackupFile(): Promise<PickedBackup> {
     const text = await readAsStringAsync(res.assets[0].uri);
     return parseBackup(text);
   } catch {
-    return { ok: false, error: 'Could not read that file.' };
+    return { ok: false, error: t('services.backup.readFailed') };
   }
 }
 

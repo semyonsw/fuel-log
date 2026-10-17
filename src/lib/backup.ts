@@ -23,6 +23,7 @@
  * Merge / Replace question.
  */
 
+import { t } from '../i18n';
 import type { Entry } from '../types';
 import { sanitizeChats, type Chat } from './chat';
 import { sanitizeEntries } from './sanitize';
@@ -75,14 +76,14 @@ export function parseBackup(text: string): ParsedBackup {
   try {
     raw = JSON.parse(text);
   } catch {
-    return { ok: false, error: 'This file is not valid JSON.' };
+    return { ok: false, error: t('summary.backup.notJson') };
   }
   const o = raw as Partial<Backup> | null;
   if (typeof o !== 'object' || o === null || o.app !== BACKUP_APP || !Array.isArray(o.entries)) {
-    return { ok: false, error: 'This is not a Fuel Log backup file.' };
+    return { ok: false, error: t('summary.backup.notBackup') };
   }
   if (typeof o.format !== 'number' || o.format > BACKUP_FORMAT) {
-    return { ok: false, error: 'This backup is from a newer Fuel Log. Update the app first.' };
+    return { ok: false, error: t('summary.backup.newer') };
   }
   const s = (o.settings ?? {}) as Partial<BackupSettings>;
   return {
@@ -168,5 +169,5 @@ export function folderLabel(treeUri: string): string {
     // keep encoded
   }
   const path = id.slice(id.indexOf(':') + 1);
-  return path || 'Internal storage';
+  return path || t('summary.backup.internal');
 }

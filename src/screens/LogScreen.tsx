@@ -20,11 +20,13 @@ import { Alert, Linking, SectionList, StyleSheet, Text, View } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EntryRow } from '../components/EntryRow';
+import { splitUnit } from '../components/format';
 import { Fabs } from '../components/Fabs';
 import { RecordIcon } from '../components/icons';
 import { RangeCard } from '../components/RangeCard';
 import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
+import { t } from '../i18n';
 import { draftFromTrack, type Draft } from '../lib/draft';
 import { currentRangeKm, groupByDay, periodStart, rangeUsedById, summarize } from '../lib/entries';
 import { effectiveKmPerLiter, tripEstimates } from '../lib/fuel';
@@ -98,8 +100,11 @@ export function LogScreen({
     <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
       <RangeCard
         entries={entries}
-        range={range === undefined ? '—' : formatKm(range).replace(/ km$/, '')}
-        weekLine={`This week: ${formatKm(week.distanceKm)} driven · ${formatKm(week.rangeUsedKm)} range used`}
+        range={range === undefined ? '—' : splitUnit(formatKm(range))[0]}
+        weekLine={t('app.log.week', {
+          driven: formatKm(week.distanceKm),
+          used: formatKm(week.rangeUsedKm),
+        })}
       />
       <Recorder entries={entries} now={now} onTripRecorded={onTripRecorded} />
     </View>
@@ -118,12 +123,8 @@ export function LogScreen({
         ListHeaderComponent={header}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Nothing logged yet</Text>
-            <Text style={styles.emptyText}>
-              Tap the + button below. Start with Range to note what the dashboard shows now, then
-              log a Trip each time you drive: where from, where to, distance and range left. Log a
-              refuel with the fuel-pump button.
-            </Text>
+            <Text style={styles.emptyTitle}>{t('app.log.emptyTitle')}</Text>
+            <Text style={styles.emptyText}>{t('app.log.emptyText')}</Text>
           </View>
         }
         contentContainerStyle={styles.list}
@@ -155,21 +156,17 @@ function Recorder({
     setBusy(false);
     if (r === 'started') return;
     if (r === 'no-background') {
-      Alert.alert(
-        'Allow location all the time',
-        'To keep recording with the screen off, set Location to "Allow all the time" for Fuel Log.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open settings', onPress: () => Linking.openSettings() },
-        ],
-      );
+      Alert.alert(t('app.log.bgTitle'), t('app.log.bgText'), [
+        { text: t('app.log.notNow'), style: 'cancel' },
+        { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
+      ]);
     } else if (r === 'no-permission') {
-      Alert.alert('Location is off for Fuel Log', 'Allow location to record a trip.', [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'Open settings', onPress: () => Linking.openSettings() },
+      Alert.alert(t('app.log.permTitle'), t('app.log.permText'), [
+        { text: t('app.log.notNow'), style: 'cancel' },
+        { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
       ]);
     } else {
-      Alert.alert('Could not start recording', 'Check that location is turned on, then try again.');
+      Alert.alert(t('app.log.failTitle'), t('app.log.failText'));
     }
   };
 
@@ -191,12 +188,12 @@ function Recorder({
         onPress={start}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Start trip, record the route with GPS"
+        accessibilityLabel={t('app.log.startA11y')}
         style={styles.startBtn}
       >
         <RecordIcon />
-        <Text style={styles.startText}>Start trip</Text>
-        <Text style={styles.startHint}>records the route with GPS</Text>
+        <Text style={styles.startText}>{t('app.log.start')}</Text>
+        <Text style={styles.startHint}>{t('app.log.startHint')}</Text>
       </Tap>
     );
   }
@@ -206,20 +203,20 @@ function Recorder({
     <View style={styles.live} accessibilityLiveRegion="polite">
       <View style={styles.liveDot} />
       <View style={styles.liveBody}>
-        <Text style={styles.liveTitle}>Recording trip</Text>
+        <Text style={styles.liveTitle}>{t('app.log.recording')}</Text>
         <Text style={styles.liveNums}>
-          {formatKm(liveDistanceKm(points))} · {minutes} min
+          {formatKm(liveDistanceKm(points))} · {t('lib.duration.minutes', { m: minutes })}
         </Text>
       </View>
       <Tap
         onPress={stop}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Stop trip"
+        accessibilityLabel={t('app.log.stopA11y')}
         style={styles.stopBtn}
       >
         <View style={styles.stopSquare} />
-        <Text style={styles.stopText}>Stop</Text>
+        <Text style={styles.stopText}>{t('app.log.stop')}</Text>
       </Tap>
     </View>
   );
