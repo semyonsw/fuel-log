@@ -236,6 +236,43 @@ export function TrashIcon(p: IconProps) {
   );
 }
 
+/** Full screen: two arrows out to opposite corners. */
+export function ExpandIcon({ size = 20, color = colors.text }: IconProps) {
+  return (
+    <Line size={size} color={color}>
+      <Path d="M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6" />
+    </Line>
+  );
+}
+
+/** Zoom in: a plus, on the map's control column. */
+export function ZoomInIcon({ size = 22, color = colors.text }: IconProps) {
+  return (
+    <Line size={size} color={color}>
+      <Path d="M12 5v14M5 12h14" />
+    </Line>
+  );
+}
+
+/** Zoom out: a minus, paired with ZoomInIcon. */
+export function ZoomOutIcon({ size = 22, color = colors.text }: IconProps) {
+  return (
+    <Line size={size} color={color}>
+      <Path d="M5 12h14" />
+    </Line>
+  );
+}
+
+/** Fit the whole route: corner brackets framing a dot, like a viewfinder. */
+export function RecenterIcon({ size = 22, color = colors.text }: IconProps) {
+  return (
+    <Line size={size} color={color}>
+      <Path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+      <Circle cx="12" cy="12" r="2" />
+    </Line>
+  );
+}
+
 const styles = StyleSheet.create({
   badge: {
     width: 32,

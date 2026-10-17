@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fuel Log",
     "slug": "fuel-log",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "platforms": [
       "android"
@@ -21,7 +21,7 @@
     ],
     "android": {
       "package": "com.semyonsw.fuellog",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0D0C"

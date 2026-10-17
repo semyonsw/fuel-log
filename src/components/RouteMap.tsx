@@ -10,127 +10,146 @@
  * corner is found on the offline projection of the same track at the same
  * size and camera padding: the map's Web Mercator fit differs from it only
  * slightly at city scale, and the map's own camera is never queried. On the
- * map the bottom-right belongs to the attribution button; on the grid the
- * bottom-left belongs to the offline note.
+ * map the bottom-right belongs to the attribution button and the top-right
+ * to the full-screen button; on the grid the bottom-left belongs to the
+ * offline note.
+ *
+ * The map sits inside the edit screen's ScrollView. Android lets a ScrollView
+ * take over a gesture its child started once the fingers move far enough, so
+ * a pinch whose fingers slid past the map's edge became a page scroll. The
+ * raw touch events (which reach this wrapper whoever handles them) report
+ * whether a finger that started here is still down, via `onHeldChange`, and
+ * the form turns its scrolling off for that long (lib/mapControls).
+ *
+ * The full-screen button is only on the real map: offline, the full-screen
+ * map could not load its tiles either.
  */
 
-import { Camera, GeoJSONSource, Layer, Map } from '@maplibre/maplibre-react-native';
-import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Camera, Map } from '@maplibre/maplibre-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 import { t } from '../i18n';
 import { trackDurationMs } from '../lib/duration';
 import { emptiestCorner, projectTrack, trackBounds } from '../lib/geo';
+import { mapHeldAfter, type MapTouchKind } from '../lib/mapControls';
 import { colors, fonts, radius, spacing } from '../theme';
 import type { TrackPoint } from '../types';
+import { FullscreenMap } from './FullscreenMap';
+import { ExpandIcon } from './icons';
+import { MAP_STYLE, RouteLayers } from './RouteLayers';
 import { DurationBadge, TrackPreview } from './TrackPreview';
+import { Tap } from './ui';
 
-export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
 const HEIGHT = 220;
 const CAMERA_PADDING = 32;
 
-export function RouteMap({ track }: { track: TrackPoint[] }) {
+export function RouteMap({
+  track,
+  onHeldChange,
+}: {
+  track: TrackPoint[];
+  /** True while a finger that went down on the map is still down. */
+  onHeldChange?: (held: boolean) => void;
+}) {
   const [failed, setFailed] = useState(false);
+  const [full, setFull] = useState(false);
   const [width, setWidth] = useState(0);
   const bounds = useMemo(() => trackBounds(track), [track]);
   const durationMs = useMemo(() => trackDurationMs(track), [track]);
   const mapCorner = useMemo(
     () =>
       width > 0
-        ? emptiestCorner(projectTrack(track, width, HEIGHT, CAMERA_PADDING), width, HEIGHT, ['br'])
+        ? emptiestCorner(projectTrack(track, width, HEIGHT, CAMERA_PADDING), width, HEIGHT, [
+            'br',
+            'tr',
+          ])
         : undefined,
     [track, width],
   );
-  const line = useMemo(
-    () => ({
-      type: 'Feature' as const,
-      properties: {},
-      geometry: { type: 'LineString' as const, coordinates: track.map((p) => [p.lon, p.lat]) },
-    }),
-    [track],
-  );
-  const ends = useMemo(
-    () => ({
-      type: 'FeatureCollection' as const,
-      features: [track[0], track[track.length - 1]].map((p, i) => ({
-        type: 'Feature' as const,
-        properties: { end: i },
-        geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] },
-      })),
-    }),
-    [track],
-  );
+
+  // Unmounting mid-gesture (the kind switched away from Trip) must not leave
+  // the form unable to scroll.
+  useEffect(() => () => onHeldChange?.(false), [onHeldChange]);
 
   if (!bounds || track.length < 2) return null;
 
+  const touch = (kind: MapTouchKind) => (e: GestureResponderEvent) =>
+    onHeldChange?.(mapHeldAfter(kind, e.nativeEvent.touches.length));
+
+  // The full-screen map renders beside the wrapper, not in it: React bubbles
+  // touches along the component tree, so inside it the Modal's touches would
+  // reach the hold handlers above.
   return (
-    <View
-      style={styles.wrap}
-      onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
-    >
-      {failed ? (
-        width > 0 ? (
-          <>
-            <TrackPreview
-              track={track}
-              width={width}
-              height={HEIGHT}
-              grid={20}
-              strokeWidth={3}
-              durationMs={durationMs}
-              avoid={['bl']}
-              badgeSize="md"
-            />
-            <Text style={styles.offline}>{t('app.map.offline')}</Text>
-          </>
-        ) : null
-      ) : (
-        <>
-          <Map
-            style={styles.map}
-            mapStyle={MAP_STYLE}
-            attribution
-            logo={false}
-            onDidFailLoadingMap={() => setFailed(true)}
-          >
-            <Camera
-              initialViewState={{
-                bounds,
-                padding: {
-                  top: CAMERA_PADDING,
-                  bottom: CAMERA_PADDING,
-                  left: CAMERA_PADDING,
-                  right: CAMERA_PADDING,
-                },
-              }}
-            />
-            <GeoJSONSource id="route" data={line}>
-              <Layer
-                id="route-line"
-                type="line"
-                paint={{ 'line-color': colors.accent, 'line-width': 4 }}
-                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+    <>
+      <View
+        style={styles.wrap}
+        onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
+        onTouchStart={touch('start')}
+        onTouchEnd={touch('end')}
+        onTouchCancel={touch('cancel')}
+      >
+        {failed ? (
+          width > 0 ? (
+            <>
+              <TrackPreview
+                track={track}
+                width={width}
+                height={HEIGHT}
+                grid={20}
+                strokeWidth={3}
+                durationMs={durationMs}
+                avoid={['bl']}
+                badgeSize="md"
               />
-            </GeoJSONSource>
-            <GeoJSONSource id="ends" data={ends}>
-              <Layer
-                id="ends-dot"
-                type="circle"
-                paint={{
-                  'circle-radius': 6,
-                  'circle-color': ['case', ['==', ['get', 'end'], 0], colors.bg, colors.accent],
-                  'circle-stroke-color': colors.accent,
-                  'circle-stroke-width': 2.5,
+              <Text style={styles.offline}>{t('app.map.offline')}</Text>
+            </>
+          ) : null
+        ) : (
+          <>
+            <Map
+              style={styles.map}
+              mapStyle={MAP_STYLE}
+              attribution
+              logo={false}
+              onDidFailLoadingMap={() => setFailed(true)}
+            >
+              <Camera
+                initialViewState={{
+                  bounds,
+                  padding: {
+                    top: CAMERA_PADDING,
+                    bottom: CAMERA_PADDING,
+                    left: CAMERA_PADDING,
+                    right: CAMERA_PADDING,
+                  },
                 }}
               />
-            </GeoJSONSource>
-          </Map>
-          {durationMs !== undefined && mapCorner ? (
-            <DurationBadge durationMs={durationMs} corner={mapCorner} size="md" />
-          ) : null}
-        </>
-      )}
-    </View>
+              <RouteLayers track={track} />
+            </Map>
+            {durationMs !== undefined && mapCorner ? (
+              <DurationBadge durationMs={durationMs} corner={mapCorner} size="md" />
+            ) : null}
+            <Tap
+              onPress={() => setFull(true)}
+              style={styles.expand}
+              accessibilityRole="button"
+              accessibilityLabel={t('app.map.expand')}
+              hitSlop={6}
+            >
+              <ExpandIcon />
+            </Tap>
+          </>
+        )}
+      </View>
+      {full ? <FullscreenMap track={track} visible onClose={() => setFull(false)} /> : null}
+    </>
   );
 }
 
@@ -144,6 +163,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   map: { flex: 1 },
+  expand: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,13,12,0.72)',
+  },
   offline: {
     position: 'absolute',
     left: spacing.md,

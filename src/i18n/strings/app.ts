@@ -44,6 +44,11 @@ export const app = defineStrings(
     'app.row.used': 'used',
 
     'app.map.offline': 'Offline: map unavailable, route shown on a grid',
+    'app.map.expand': 'Full-screen map',
+    'app.map.close': 'Close map',
+    'app.map.zoomIn': 'Zoom in',
+    'app.map.zoomOut': 'Zoom out',
+    'app.map.recenter': 'Show the whole route',
   },
   {
     'app.tab.history': 'Պատմություն',
@@ -84,6 +89,11 @@ export const app = defineStrings(
     'app.row.used': 'ծախս',
 
     'app.map.offline': 'Անցանց․ քարտեզը հասանելի չէ, երթուղին ցանցի վրա է',
+    'app.map.expand': 'Քարտեզը լիաէկրան',
+    'app.map.close': 'Փակել քարտեզը',
+    'app.map.zoomIn': 'Մեծացնել',
+    'app.map.zoomOut': 'Փոքրացնել',
+    'app.map.recenter': 'Ցույց տալ ամբողջ երթուղին',
   },
   {
     'app.tab.history': 'История',
@@ -124,5 +134,10 @@ export const app = defineStrings(
     'app.row.used': 'расход',
 
     'app.map.offline': 'Офлайн: карта недоступна, маршрут показан на сетке',
+    'app.map.expand': 'Карта на весь экран',
+    'app.map.close': 'Закрыть карту',
+    'app.map.zoomIn': 'Приблизить',
+    'app.map.zoomOut': 'Отдалить',
+    'app.map.recenter': 'Показать весь маршрут',
   },
 );

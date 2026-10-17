@@ -118,6 +118,9 @@ export function EntryForm({
   const kinds = kindValues.map((value) => ({ value, label: t(KIND_LABEL[value]) }));
   const [markers, setMarkers] = useState<FormMarkers>(initialMarkers ?? {});
   const [showErrors, setShowErrors] = useState(false);
+  // While a finger is on the route map the page holds still, so a pinch that
+  // drifts past the map's edge stays a zoom (see RouteMap).
+  const [mapHeld, setMapHeld] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const result = useMemo(() => validateDraft(draft, id), [draft, id]);
   const errors = showErrors && !result.ok ? result.errors : {};
@@ -251,13 +254,14 @@ export function EntryForm({
           style={styles.flex}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={!mapHeld}
         >
           {draft.kind === 'trip' ? (
             <>
               {draft.track && draft.track.length > 1 ? (
                 <View style={styles.mapBlock}>
                   <SectionLabel>{t('form.route')}</SectionLabel>
-                  <RouteMap track={draft.track} />
+                  <RouteMap track={draft.track} onHeldChange={setMapHeld} />
                   {gpsKm !== undefined ? (
                     <Text style={styles.muted}>
                       {t('form.gpsDistance', { km: formatKm(gpsKm) })}
