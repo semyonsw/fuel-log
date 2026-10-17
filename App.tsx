@@ -125,6 +125,7 @@ function Shell() {
         {tab === 'log' ? (
           <LogScreen
             onAdd={openNew}
+            onAddRefuel={openRefuel}
             onEdit={openEdit}
             onAi={openChat}
             onTripRecorded={openRecorded}

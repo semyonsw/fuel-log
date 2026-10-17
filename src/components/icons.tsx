@@ -107,6 +107,34 @@ export function SparklesIcon({ size = 28, color = colors.onAccent }: IconProps) 
   );
 }
 
+/**
+ * The fuel pump from the app icon (amber pump, dark window), redrawn on the 24
+ * grid so the refuel button reads as "the app's own fuel thing" at a glance.
+ * The window is a dark fill, not a hole, so it matches the icon on any background.
+ */
+export function FuelPumpIcon({
+  size = 30,
+  color = colors.accent,
+  window = colors.bg,
+}: IconProps & { window?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="4.2" y="1.3" width="11" height="20" rx="1.8" fill={color} />
+      <Rect x="2.5" y="20.8" width="14.3" height="1.9" rx="0.7" fill={color} />
+      <Rect x="6.1" y="3.5" width="7.1" height="5.5" rx="0.8" fill={window} />
+      <Path
+        d="M15 11.1h2.4v6.3a1.35 1.35 0 0 0 2.7 0V8.4M17.6 2.9l2 2"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Rect x="18.75" y="4" width="2.75" height="4.4" rx="0.5" fill={color} />
+    </Svg>
+  );
+}
+
 export function CameraIcon(p: IconProps) {
   return (
     <Line {...p}>

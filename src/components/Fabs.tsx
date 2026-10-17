@@ -1,7 +1,13 @@
 /**
- * The two floating buttons, bottom-right under the thumb: AI chat and "+".
+ * The floating buttons, bottom-right under the thumb, left to right: AI chat,
+ * refuel (the fuel pump) and "+" (trip / range).
  *
- * Same 64 dp circle for both so neither reads as secondary. The AI one says
+ * Refuels get their own button so logging one is a single tap straight into a
+ * refuel-only form, and "+" stays about driving. The fuel button is the app
+ * icon in miniature (amber pump on the dark disc) so it is recognisable
+ * without a label.
+ *
+ * Same 64 dp circle for all so none reads as secondary. The AI one says
  * "this is the new, smart thing" with motion rather than words: a soft amber
  * halo that breathes and a slow sparkle twinkle. Motion runs on the native
  * driver (opacity/scale only) so it costs nothing while the list scrolls, and
@@ -12,15 +18,31 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 
 import { colors, spacing } from '../theme';
-import { PlusIcon, SparklesIcon } from './icons';
+import { FuelPumpIcon, PlusIcon, SparklesIcon } from './icons';
 import { Tap } from './ui';
 
 const SIZE = 64;
 
-export function Fabs({ onAi, onAdd }: { onAi: () => void; onAdd: () => void }) {
+export function Fabs({
+  onAi,
+  onRefuel,
+  onAdd,
+}: {
+  onAi: () => void;
+  onRefuel: () => void;
+  onAdd: () => void;
+}) {
   return (
     <View style={styles.row} pointerEvents="box-none">
       <AiFab onPress={onAi} />
+      <Tap
+        onPress={onRefuel}
+        accessibilityRole="button"
+        accessibilityLabel="Add refuel"
+        style={[styles.fab, styles.fuel]}
+      >
+        <FuelPumpIcon />
+      </Tap>
       <Tap
         onPress={onAdd}
         accessibilityRole="button"
@@ -133,6 +155,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 6,
   },
+  fuel: { backgroundColor: colors.bg, borderWidth: 2, borderColor: colors.accent },
   aiWrap: { width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' },
   // The AI button is the amber disc with a warm outer ring, so it glows rather than shouts.
   ai: { backgroundColor: '#FFC24D', borderWidth: 2, borderColor: colors.accent },

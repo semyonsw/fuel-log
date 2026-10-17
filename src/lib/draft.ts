@@ -59,6 +59,17 @@ export function emptyDraft(kind: EntryKind, now: number): Draft {
 }
 
 /**
+ * The kinds a form may switch between. Refuels have their own button (the fuel
+ * pump) and their own form, apart from the "+" that logs driving: a trip and a
+ * range reading both say what the car did, a refuel says what was bought. So a
+ * form opened for one group never offers the other, and editing an entry keeps
+ * it in its group.
+ */
+export function formKinds(kind: EntryKind): EntryKind[] {
+  return kind === 'refuel' ? ['refuel'] : ['trip', 'reading'];
+}
+
+/**
  * A new trip from a finished recording. The GPS distance is only a pre-fill:
  * it lands in the same string field the user types into, so whatever they
  * type over it is what validation reads and what gets saved.

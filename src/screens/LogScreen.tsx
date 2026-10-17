@@ -11,7 +11,7 @@
  *
  * The timeline reads like the old notes, newest first, one card per day.
  * Rows in a day share one rounded card (corners on the first/last row only)
- * so a busy day reads as a unit. The AI and "+" buttons float bottom-right,
+ * so a busy day reads as a unit. The AI, refuel and "+" buttons float bottom-right,
  * inside thumb reach, above the tab bar.
  */
 
@@ -40,11 +40,13 @@ type Section = { key: string; title: string; data: Entry[] };
 
 export function LogScreen({
   onAdd,
+  onAddRefuel,
   onEdit,
   onAi,
   onTripRecorded,
 }: {
   onAdd: () => void;
+  onAddRefuel: () => void;
   onEdit: (entry: Entry) => void;
   onAi: () => void;
   onTripRecorded: (
@@ -119,13 +121,14 @@ export function LogScreen({
             <Text style={styles.emptyTitle}>Nothing logged yet</Text>
             <Text style={styles.emptyText}>
               Tap the + button below. Start with Range to note what the dashboard shows now, then
-              log a Trip each time you drive: where from, where to, distance and range left.
+              log a Trip each time you drive: where from, where to, distance and range left. Log a
+              refuel with the fuel-pump button.
             </Text>
           </View>
         }
         contentContainerStyle={styles.list}
       />
-      <Fabs onAi={onAi} onAdd={onAdd} />
+      <Fabs onAi={onAi} onRefuel={onAddRefuel} onAdd={onAdd} />
     </View>
   );
 }

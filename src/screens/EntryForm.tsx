@@ -2,7 +2,8 @@
  * Add / edit an entry: a full-screen sheet that slides up over the tabs.
  *
  * Layout is built for one hand in a parked car: the kind switch at the top
- * with one line saying what that kind is for, the fields the user actually
+ * (Trip / Range from "+"; none on the fuel button's refuel-only form) with one
+ * line saying what that kind is for, the fields the user actually
  * types in the middle (places first, because a trip is mostly "where to
  * where"), the time below them since it's usually "now" already, and Save
  * pinned at the bottom under the thumb, with one line above it saying what
@@ -42,7 +43,14 @@ import { RouteMap } from '../components/RouteMap';
 import { StationField } from '../components/StationField';
 import { Button, Chip, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
 import { WhenPicker } from '../components/WhenPicker';
-import { draftFromEntry, emptyDraft, saveHint, validateDraft, type Draft } from '../lib/draft';
+import {
+  draftFromEntry,
+  emptyDraft,
+  formKinds,
+  saveHint,
+  validateDraft,
+  type Draft,
+} from '../lib/draft';
 import { currentRangeKm, rangeUsedById } from '../lib/entries';
 import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { trackDistanceKm } from '../lib/geo';
@@ -93,6 +101,8 @@ export function EntryForm({
   const [draft, setDraft] = useState<Draft>(() =>
     editing ? draftFromEntry(editing) : (initial ?? emptyDraft('trip', Date.now())),
   );
+  // Fixed at open: the fuel button's form is refuel-only, the "+" form is trip/range.
+  const [kinds] = useState(() => KINDS.filter((k) => formKinds(draft.kind).includes(k.value)));
   const [markers, setMarkers] = useState<FormMarkers>(initialMarkers ?? {});
   const [showErrors, setShowErrors] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -199,13 +209,25 @@ export function EntryForm({
           >
             <CloseIcon />
           </Tap>
-          <Text style={styles.title}>{editing ? 'Edit entry' : 'New entry'}</Text>
+          <Text style={styles.title}>
+            {draft.kind === 'refuel'
+              ? editing
+                ? 'Edit refuel'
+                : 'New refuel'
+              : editing
+                ? 'Edit entry'
+                : 'New entry'}
+          </Text>
           <View style={styles.close} />
         </View>
 
         <View style={styles.kindRow}>
-          <Segmented options={KINDS} value={draft.kind} onChange={(k) => set('kind', k)} />
-          <Text style={styles.kindHint}>{KIND_HINT[draft.kind]}</Text>
+          {kinds.length > 1 ? (
+            <Segmented options={kinds} value={draft.kind} onChange={(k) => set('kind', k)} />
+          ) : null}
+          <Text style={[styles.kindHint, kinds.length === 1 && styles.kindHintAlone]}>
+            {KIND_HINT[draft.kind]}
+          </Text>
         </View>
 
         <ScrollView
@@ -505,6 +527,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginHorizontal: spacing.xs,
   },
+  kindHintAlone: { marginTop: 0 },
   content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
   pair: { flexDirection: 'row', gap: spacing.md },
   mapBlock: { gap: spacing.sm },

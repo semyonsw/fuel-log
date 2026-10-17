@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { draftFromEntry, emptyDraft, saveHint, validateDraft, type Draft } from './draft';
+import {
+  draftFromEntry,
+  emptyDraft,
+  formKinds,
+  saveHint,
+  validateDraft,
+  type Draft,
+} from './draft';
 import { at, reading, refuel, trip } from './entries.fixtures';
 
 /**
@@ -221,5 +228,38 @@ describe('saveHint', () => {
     expect(saveHint({ liters: 'Enter liters' })).toBe('To save, fill in: Liters');
     expect(saveHint({ range: 'Not a number' })).toBe('Check: Range left');
     expect(saveHint({})).toBe('');
+  });
+});
+
+describe('formKinds', () => {
+  it('keeps refuel on its own form (the fuel button)', () => {
+    expect(formKinds('refuel')).toEqual(['refuel']);
+  });
+
+  it('offers only Trip and Range on the "+" form, never Refuel', () => {
+    expect(formKinds('trip')).toEqual(['trip', 'reading']);
+    expect(formKinds('reading')).toEqual(['trip', 'reading']);
+    expect(formKinds(emptyDraft('trip', now).kind)).not.toContain('refuel');
+  });
+
+  it('opens the fuel button’s form on refuel, with nothing else to switch to', () => {
+    const d = emptyDraft('refuel', now);
+    expect(formKinds(d.kind)).toEqual([d.kind]);
+  });
+
+  it('keeps an edited entry in its own group', () => {
+    expect(formKinds(draftFromEntry(refuel('f', now, 30, 15000)).kind)).toEqual(['refuel']);
+    expect(formKinds(draftFromEntry(trip('t', now, 'a', 'b')).kind)).toEqual(['trip', 'reading']);
+    expect(formKinds(draftFromEntry(reading('r', now, 300)).kind)).toEqual(['trip', 'reading']);
+  });
+
+  it('a refuel saved from the refuel-only form keeps liters, price and grade', () => {
+    const r = validateDraft(draft('refuel', { liters: '30', price: '15000', grade: '95' }), 'f');
+    expect(r.ok && r.entry).toMatchObject({
+      kind: 'refuel',
+      liters: 30,
+      priceAmd: 15000,
+      grade: '95',
+    });
   });
 });
