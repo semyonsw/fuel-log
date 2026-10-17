@@ -11,8 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build:apk": "bash scripts/build-apk.sh",
-    "ios": "expo run:ios"
+    "build:apk": "bash scripts/build-apk.sh"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
