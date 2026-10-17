@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { setLang } from '../i18n';
 import { at, refuel, trip } from './entries.fixtures';
-import { FUEL_GRADES, gradeLabel, refuelDefaults, stationLine, suggestAddresses } from './stations';
+import {
+  addressForStation,
+  FUEL_GRADES,
+  gradeLabel,
+  refuelDefaults,
+  stationLine,
+  suggestAddresses,
+} from './stations';
 import type { FuelGrade, RefuelEntry } from '../types';
 
 const fill = (
@@ -91,5 +98,31 @@ describe('fuel grade labels', () => {
     expect(gradeLabel('92')).toBe('Ռեգուլյար 92');
     expect(gradeLabel('diesel')).toBe('Դիզել');
     expect(FUEL_GRADES.map((g) => g.value)).toEqual(['92', '95', '98', 'diesel']);
+  });
+});
+
+describe('addressForStation', () => {
+  const log = [
+    fill('a', at(1, 9, 0), 'Max Petrol', 'Komitas 5', '95'),
+    fill('b', at(2, 9, 0), 'Flash', 'Arshakunyats 10', '92'),
+  ];
+
+  it("drops the previous station's address when the new station has none", () => {
+    expect(addressForStation(log, 'Max Petrol', 'Rompetrol', 'Komitas 5')).toBe('');
+  });
+
+  it("swaps in the new station's own last address", () => {
+    expect(addressForStation(log, 'Max Petrol', 'Flash', 'Komitas 5')).toBe('Arshakunyats 10');
+  });
+
+  it('keeps an address the user typed', () => {
+    expect(addressForStation(log, 'Max Petrol', 'Rompetrol', 'Tigran Mets 3')).toBe(
+      'Tigran Mets 3',
+    );
+  });
+
+  it('fills an empty address from the new station', () => {
+    expect(addressForStation(log, '', 'Flash', '')).toBe('Arshakunyats 10');
+    expect(addressForStation(log, 'Fla', 'Flas', '')).toBe('');
   });
 });

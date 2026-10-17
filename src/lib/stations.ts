@@ -66,6 +66,25 @@ export function suggestStations(entries: Entry[], query: string, limit = 8): str
     .map(([, u]) => u.name);
 }
 
+/**
+ * The address to show after the station changes. An address that was only
+ * filled in for the previous station (from its history, or the pre-filled last
+ * refuel) belongs to that station, so it is replaced by the new station's own
+ * last address, or cleared; keeping it would save one pump's name with another
+ * pump's address. An address the user typed themselves is kept.
+ */
+export function addressForStation(
+  entries: Entry[],
+  prevStation: string,
+  nextStation: string,
+  address: string,
+): string {
+  const typed = address.trim();
+  const auto = lastAddressFor(entries, prevStation);
+  if (typed !== '' && typed !== auto) return address;
+  return lastAddressFor(entries, nextStation) ?? '';
+}
+
 /** The address recorded with this station most recently, if any. */
 export function lastAddressFor(entries: Entry[], station: string): string | undefined {
   const key = normalizePlace(station).toLowerCase();

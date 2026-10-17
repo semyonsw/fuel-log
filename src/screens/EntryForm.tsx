@@ -57,7 +57,7 @@ import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { trackDistanceKm } from '../lib/geo';
 import { newId } from '../lib/id';
 import { formatAmd, formatKm, formatLiters, parseNumber } from '../lib/numbers';
-import { FUEL_GRADES, refuelDefaults } from '../lib/stations';
+import { addressForStation, FUEL_GRADES, refuelDefaults } from '../lib/stations';
 import { formatDelta } from '../components/format';
 import { t, type StringKey } from '../i18n';
 import { useSettings } from '../state/settings';
@@ -445,9 +445,19 @@ export function EntryForm({
               />
               <StationField
                 value={draft.station}
-                onChange={(v) => set('station', v)}
-                onPick={(name, address) =>
-                  setDraft((d) => ({ ...d, station: name, address: address ?? d.address }))
+                onChange={(v) =>
+                  setDraft((d) => ({
+                    ...d,
+                    station: v,
+                    address: addressForStation(entries, d.station, v, d.address),
+                  }))
+                }
+                onPick={(name) =>
+                  setDraft((d) => ({
+                    ...d,
+                    station: name,
+                    address: addressForStation(entries, d.station, name, d.address),
+                  }))
                 }
               />
               <AddressField
