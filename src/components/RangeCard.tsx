@@ -23,12 +23,10 @@ export const RangeCard = memo(function RangeCard({
   entries,
   range,
   todayLine,
-  weekLine,
 }: {
   entries: Entry[];
   range: string;
   todayLine: string;
-  weekLine: string;
 }) {
   const [w, setW] = useState(0);
   const [cardSize, setCardSize] = useState({ w: 0, h: 0 });
@@ -73,8 +71,7 @@ export const RangeCard = memo(function RangeCard({
         </Text>
         <Text style={styles.unit}>{t('components.range.unit')}</Text>
       </View>
-      <Text style={styles.week}>{todayLine}</Text>
-      <Text style={styles.week}>{weekLine}</Text>
+      <Text style={styles.today}>{todayLine}</Text>
       <View style={styles.spark} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
         {spark && w > 0 ? (
           <Svg width={w} height={SPARK_H}>
@@ -151,7 +148,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   unit: { color: colors.text, fontFamily: fonts.ui, fontSize: 18, fontWeight: '600' },
-  week: {
+  today: {
     color: colors.muted,
     fontFamily: fonts.ui,
     fontSize: 14,

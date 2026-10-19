@@ -21,7 +21,6 @@ export const app = defineStrings(
 
     'app.log.today': 'Today: {driven} driven · ≈ {cost}',
     'app.log.todayNoCost': 'Today: {driven} driven',
-    'app.log.week': 'This week: {driven} driven · {used} range used',
     'app.log.emptyTitle': 'Nothing logged yet',
     'app.log.emptyText':
       'Tap the + button below. Start with Range to note what the dashboard shows now, then log a Trip each time you drive: where from, where to, distance and range left. Log a refuel with the fuel-pump button.',
@@ -68,7 +67,6 @@ export const app = defineStrings(
 
     'app.log.today': 'Այսօր՝ {driven} ճանապարհ · ≈ {cost}',
     'app.log.todayNoCost': 'Այսօր՝ {driven} ճանապարհ',
-    'app.log.week': 'Այս շաբաթ՝ {driven} ճանապարհ · {used} ծախսված պաշար',
     'app.log.emptyTitle': 'Դեռ գրառումներ չկան',
     'app.log.emptyText':
       'Սեղմեք ներքևի + կոճակը։ Սկսեք «Պաշար»-ից՝ նշելու, թե ինչ է ցույց տալիս վահանակը հիմա, իսկ հետո ամեն երթից հետո գրանցեք «Ուղևորություն»՝ որտեղից, ուր, հեռավորությունը և մնացած պաշարը։ Լիցքավորումը գրանցեք վառելիքի պոմպի կոճակով։',
@@ -115,7 +113,6 @@ export const app = defineStrings(
 
     'app.log.today': 'Сегодня: проехано {driven} · ≈ {cost}',
     'app.log.todayNoCost': 'Сегодня: проехано {driven}',
-    'app.log.week': 'За неделю: проехано {driven} · израсходовано {used} запаса',
     'app.log.emptyTitle': 'Пока нет записей',
     'app.log.emptyText':
       'Нажмите кнопку + внизу. Начните с «Запаса»: отметьте, что сейчас показывает панель, а потом после каждой поездки добавляйте «Поездку»: откуда, куда, расстояние и остаток запаса хода. Заправку добавляйте кнопкой с колонкой.',

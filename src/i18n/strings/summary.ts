@@ -118,7 +118,7 @@ export const summary = defineStrings(
     'summary.tile.fuel': 'Վառելիք',
     'summary.tile.spent': 'Ծախսված',
     'summary.tile.avgPrice': 'Միջին գին',
-    'summary.tile.driveCost': 'Ճանապարհի արժեք ≈',
+    'summary.tile.driveCost': 'Երթերի արժեք ≈',
     'summary.perLiter': '{amd}/լ',
     'summary.unit.km': 'կմ',
     'summary.unit.amdPerL': 'AMD/լ',

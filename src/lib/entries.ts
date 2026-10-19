@@ -173,6 +173,22 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
 }
 
 /**
+ * km driven in `fromMs <= at < toMs`: each trip's own distance, or, when it
+ * has none, the range it used. The same rule `tripEstimates` prices, so a
+ * "km · ≈ AMD" pair always describes the same kilometres; a trip logged with
+ * only a dashboard reading still counts as driving.
+ */
+export function drivenKm(entries: Entry[], fromMs: number, toMs: number): number {
+  const used = rangeUsedById(entries);
+  let km = 0;
+  for (const e of entries) {
+    if (e.kind !== 'trip' || e.at < fromMs || e.at >= toMs) continue;
+    km += e.distanceKm !== undefined && e.distanceKm > 0 ? e.distanceKm : (used.get(e.id) ?? 0);
+  }
+  return km;
+}
+
+/**
  * Local start of the period containing `now`: today 00:00, Monday 00:00, the
  * 1st 00:00, or 0 for all time.
  */

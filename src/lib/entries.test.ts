@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setLang } from '../i18n';
 
 import {
+  drivenKm,
   currentRangeKm,
   dayKey,
   dayLabel,
@@ -221,6 +222,50 @@ describe('summarize', () => {
   it('includes the start of the window and excludes the end', () => {
     const entries = [trip('a', 100, 'x', 'y', { distanceKm: 1 }), trip('b', 200, 'y', 'x')];
     expect(summarize(entries, 100, 200).trips).toBe(1);
+  });
+});
+
+describe('drivenKm', () => {
+  // Fri 16 Oct 2026.
+  const today = at(16, 0, 0);
+
+  it("uses a trip's own distance", () => {
+    const log = [trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 12.5 })];
+    expect(drivenKm(log, today, Infinity)).toBe(12.5);
+  });
+
+  it('falls back to range used for a trip with no distance', () => {
+    const log = [
+      reading('r', at(16, 7, 0), 100),
+      trip('a', at(16, 8, 0), 'x', 'y', { rangeKm: 85 }),
+      trip('b', at(16, 9, 0), 'y', 'x', { distanceKm: 10, rangeKm: 70 }), // distance wins over 15
+    ];
+    expect(drivenKm(log, today, Infinity)).toBe(25);
+  });
+
+  it('measures range used from a reading on an earlier day', () => {
+    const log = [
+      reading('r', at(15, 21, 0), 100),
+      trip('a', at(16, 8, 0), 'x', 'y', { rangeKm: 90 }),
+    ];
+    expect(drivenKm(log, today, Infinity)).toBe(10);
+  });
+
+  it('leaves out other days, readings and refuels', () => {
+    const log = [
+      trip('y', at(15, 18, 0), 'x', 'y', { distanceKm: 40 }),
+      reading('r', at(16, 7, 0), 100),
+      refuel('f', at(16, 8, 0), 20, 10000, 300),
+    ];
+    expect(drivenKm(log, today, Infinity)).toBe(0);
+  });
+
+  it('is 0 for a trip with neither distance nor range used', () => {
+    expect(drivenKm([trip('a', at(16, 8, 0), 'x', 'y')], today, Infinity)).toBe(0);
+  });
+
+  it('reads the real notes of the 15th: 22.5 km typed + 23 km of range (106 → 83)', () => {
+    expect(drivenKm(realNotes, at(15, 0, 0), today)).toBe(45.5);
   });
 });
 

@@ -28,7 +28,7 @@ import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
 import { t } from '../i18n';
 import { draftFromTrack, type Draft } from '../lib/draft';
-import { currentRangeKm, groupByDay, periodStart, rangeUsedById, summarize } from '../lib/entries';
+import { currentRangeKm, drivenKm, groupByDay, periodStart, rangeUsedById } from '../lib/entries';
 import { effectiveKmPerLiter, periodFuelCost, tripEstimates } from '../lib/fuel';
 import { formatAmd, formatKm } from '../lib/numbers';
 import { guessEnds } from '../lib/placeGuess';
@@ -70,14 +70,10 @@ export function LogScreen({
   const estimates = useMemo(() => tripEstimates(entries, used, kmPerL), [entries, used, kmPerL]);
   const range = useMemo(() => currentRangeKm(entries), [entries]);
   // Open-ended so an entry stepped a few minutes into the future still counts.
-  const week = useMemo(
-    () => summarize(entries, periodStart('week', now), Number.POSITIVE_INFINITY),
-    [entries, now],
-  );
   const today = useMemo(() => {
     const from = periodStart('today', now);
     return {
-      driven: summarize(entries, from, Number.POSITIVE_INFINITY).distanceKm,
+      driven: drivenKm(entries, from, Number.POSITIVE_INFINITY),
       cost: periodFuelCost(entries, from, Number.POSITIVE_INFINITY, kmPerL),
     };
   }, [entries, now, kmPerL]);
@@ -116,10 +112,6 @@ export function LogScreen({
               })
             : t('app.log.todayNoCost', { driven: formatKm(today.driven) })
         }
-        weekLine={t('app.log.week', {
-          driven: formatKm(week.distanceKm),
-          used: formatKm(week.rangeUsedKm),
-        })}
       />
       <Recorder entries={entries} now={now} onTripRecorded={onTripRecorded} />
     </View>
