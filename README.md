@@ -12,8 +12,11 @@ replaces a running note in Samsung Notes with something that does the arithmetic
 - **Range used per trip,** computed automatically from the readings around it.
 - **Refuels** with liters and price in AMD.
 - **Remembered places,** so frequent stops are one tap instead of retyped.
-- **Weekly, monthly, all-time and custom-range summary** of trips, range used,
-  liters and money spent, with spending per day.
+- **Today, weekly, monthly, all-time and custom-range summary** of trips, range
+  used, liters and money spent, with spending per day, plus the approximate
+  fuel cost of the period's driving (km × consumption × price per liter).
+- **Today on the Log:** km driven today and what that driving cost, under the
+  range.
 - **Spending history:** every refuel in the period, editable, plus "Add refuel"
   for any past date. Refuels can record the station, its address and the grade.
 - **Fuel calculator:** what a distance costs, or how far an amount takes you.

@@ -19,6 +19,8 @@ export const app = defineStrings(
     'app.settings.consumptionUnit': 'L/100 km',
     'app.settings.consumptionHint': 'Leave blank to use the figure worked out from your refuels.',
 
+    'app.log.today': 'Today: {driven} driven · ≈ {cost}',
+    'app.log.todayNoCost': 'Today: {driven} driven',
     'app.log.week': 'This week: {driven} driven · {used} range used',
     'app.log.emptyTitle': 'Nothing logged yet',
     'app.log.emptyText':
@@ -64,6 +66,8 @@ export const app = defineStrings(
     'app.settings.consumptionHint':
       'Թողեք դատարկ, և կօգտագործվի լիցքավորումներից հաշված ցուցանիշը։',
 
+    'app.log.today': 'Այսօր՝ {driven} ճանապարհ · ≈ {cost}',
+    'app.log.todayNoCost': 'Այսօր՝ {driven} ճանապարհ',
     'app.log.week': 'Այս շաբաթ՝ {driven} ճանապարհ · {used} ծախսված պաշար',
     'app.log.emptyTitle': 'Դեռ գրառումներ չկան',
     'app.log.emptyText':
@@ -109,6 +113,8 @@ export const app = defineStrings(
     'app.settings.consumptionHint':
       'Оставьте пустым, чтобы брать расход, рассчитанный по заправкам.',
 
+    'app.log.today': 'Сегодня: проехано {driven} · ≈ {cost}',
+    'app.log.todayNoCost': 'Сегодня: проехано {driven}',
     'app.log.week': 'За неделю: проехано {driven} · израсходовано {used} запаса',
     'app.log.emptyTitle': 'Пока нет записей',
     'app.log.emptyText':

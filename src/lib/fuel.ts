@@ -1,6 +1,6 @@
 /**
- * Money and consumption: the calculator, per-trip cost estimates, and the
- * custom summary period.
+ * Money and consumption: the calculator, per-trip cost estimates and their
+ * per-period total, and the custom summary period.
  *
  * ── THE APP DOES NOT KNOW THE CAR'S CONSUMPTION ──────────────────────────
  *
@@ -23,6 +23,7 @@
 
 import { t } from '../i18n';
 import type { Entry, RefuelEntry, TripEntry } from '../types';
+import { rangeUsedById } from './entries';
 import { parseNumber } from './numbers';
 
 function sortedAsc(entries: Entry[]): Entry[] {
@@ -136,6 +137,36 @@ export function tripEstimates(
     if (r) out.set(e.id, r);
   }
   return out;
+}
+
+export type PeriodCost = { amd: number; liters: number; trips: number };
+
+/**
+ * What the driving in `fromMs <= at < toMs` cost: the sum of the trips' own
+ * estimates (`tripEstimates`), so the Summary total always equals the figures
+ * the Log shows per trip. A trip without an estimate (no price before it, no
+ * distance or range used) adds nothing rather than a guess; undefined when no
+ * trip in the period has one, so the tile can say "—" instead of 0 AMD.
+ */
+export function periodFuelCost(
+  entries: Entry[],
+  fromMs: number,
+  toMs: number,
+  kmPerL: number | undefined,
+): PeriodCost | undefined {
+  // Over the FULL list, like `summarize`: price and range used come from earlier entries.
+  const estimates = tripEstimates(entries, rangeUsedById(entries), kmPerL);
+  let cost: PeriodCost | undefined;
+  for (const e of entries) {
+    if (e.kind !== 'trip' || e.at < fromMs || e.at >= toMs) continue;
+    const est = estimates.get(e.id);
+    if (!est) continue;
+    cost ??= { amd: 0, liters: 0, trips: 0 };
+    cost.amd += est.amd;
+    cost.liters += est.liters;
+    cost.trips += 1;
+  }
+  return cost;
 }
 
 /** Local midnight of the day containing `at`, moved `days` days, via Date so DST stays whole. */

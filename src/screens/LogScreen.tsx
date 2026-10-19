@@ -29,8 +29,8 @@ import { useNow } from '../components/useNow';
 import { t } from '../i18n';
 import { draftFromTrack, type Draft } from '../lib/draft';
 import { currentRangeKm, groupByDay, periodStart, rangeUsedById, summarize } from '../lib/entries';
-import { effectiveKmPerLiter, tripEstimates } from '../lib/fuel';
-import { formatKm } from '../lib/numbers';
+import { effectiveKmPerLiter, periodFuelCost, tripEstimates } from '../lib/fuel';
+import { formatAmd, formatKm } from '../lib/numbers';
 import { guessEnds } from '../lib/placeGuess';
 import { liveDistanceKm, startTracking, stopTracking, useTracking } from '../services/tracking';
 import { useSettings } from '../state/settings';
@@ -74,6 +74,13 @@ export function LogScreen({
     () => summarize(entries, periodStart('week', now), Number.POSITIVE_INFINITY),
     [entries, now],
   );
+  const today = useMemo(() => {
+    const from = periodStart('today', now);
+    return {
+      driven: summarize(entries, from, Number.POSITIVE_INFINITY).distanceKm,
+      cost: periodFuelCost(entries, from, Number.POSITIVE_INFINITY, kmPerL),
+    };
+  }, [entries, now, kmPerL]);
 
   const renderItem = useCallback(
     ({ item, index, section }: { item: Entry; index: number; section: Section }) => (
@@ -101,6 +108,14 @@ export function LogScreen({
       <RangeCard
         entries={entries}
         range={range === undefined ? '—' : splitUnit(formatKm(range))[0]}
+        todayLine={
+          today.cost
+            ? t('app.log.today', {
+                driven: formatKm(today.driven),
+                cost: formatAmd(today.cost.amd),
+              })
+            : t('app.log.todayNoCost', { driven: formatKm(today.driven) })
+        }
         weekLine={t('app.log.week', {
           driven: formatKm(week.distanceKm),
           used: formatKm(week.rangeUsedKm),

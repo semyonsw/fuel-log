@@ -4,7 +4,7 @@
  *   Tap         Pressable with the app's one pressed look (dim + slight shrink)
  *   Card        a surface panel
  *   Chip        a pill that is tappable, optionally "on"
- *   Segmented   equal-width options in one track (Trip/Range/Refuel, Week/Month/All)
+ *   Segmented   equal-width options in one track (Trip/Range/Refuel, Today/Week/Month/All)
  *   Field       label + TextInput + error line, 56 high so it's thumb-friendly
  *   Button      full-width primary / ghost / danger action
  *   Sheet       a bottom sheet over a dimmed backdrop (confirmations)
@@ -120,7 +120,14 @@ export function Segmented<T extends string>({
             accessibilityState={{ selected: on }}
             style={[styles.seg, on && styles.segOn]}
           >
-            <Text style={[styles.segText, on && styles.segTextOn]}>{o.label}</Text>
+            {/* Shrinks rather than wraps: five Summary periods share one row on 360dp. */}
+            <Text
+              style={[styles.segText, on && styles.segTextOn]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {o.label}
+            </Text>
           </Tap>
         );
       })}
@@ -359,6 +366,7 @@ const styles = StyleSheet.create({
   segTrackDark: { backgroundColor: colors.bg },
   seg: {
     flex: 1,
+    paddingHorizontal: 2,
     minHeight: TOUCH - 4,
     borderRadius: radius.sm,
     alignItems: 'center',

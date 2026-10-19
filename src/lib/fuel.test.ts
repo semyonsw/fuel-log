@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setLang } from '../i18n';
 
 import { at, reading, refuel, trip } from './entries.fixtures';
-import { rangeUsedById } from './entries';
+import { periodStart, rangeUsedById } from './entries';
 import {
   calculate,
   clampCustomRange,
@@ -13,6 +13,7 @@ import {
   kmForMoney,
   kmPerLiterFromRefuels,
   latestPricePerLiter,
+  periodFuelCost,
   shiftDay,
   tripEstimates,
   tripFuelEstimate,
@@ -258,6 +259,73 @@ describe('tripEstimates', () => {
     }
     expect(all.has('a')).toBe(false);
     expect(all.get('d')!.amd).toBe(600);
+  });
+});
+
+describe('periodFuelCost', () => {
+  // Fri 16 Oct 2026; 500 AMD/L from the refuel on the 15th, 10 km per litre.
+  const now = at(16, 19, 0);
+  const today = periodStart('today', now);
+  const log = [
+    reading('r0', at(15, 8, 0), 300),
+    refuel('f', at(15, 9, 0), 20, 10000),
+    trip('y', at(15, 18, 0), 'x', 'y', { distanceKm: 40 }), // yesterday
+    trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 20, rangeKm: 280 }),
+    trip('b', at(16, 18, 0), 'y', 'x', { rangeKm: 265 }), // no distance: range used, 15 km
+    reading('r1', at(16, 19, 0), 265),
+  ];
+
+  it("sums today's trip estimates: km ÷ km/L × the price before each trip", () => {
+    // (20 + 15) km / 10 = 3.5 L × 500 = 1750 AMD; yesterday's 40 km is left out.
+    expect(periodFuelCost(log, today, Infinity, 10)).toEqual({ amd: 1750, liters: 3.5, trips: 2 });
+  });
+
+  it('equals the per-trip figures the Log shows', () => {
+    const per = tripEstimates(log, rangeUsedById(log), 10);
+    expect(periodFuelCost(log, today, Infinity, 10)!.amd).toBe(
+      per.get('a')!.amd + per.get('b')!.amd,
+    );
+  });
+
+  it('covers any window, e.g. the whole log', () => {
+    expect(periodFuelCost(log, 0, Infinity, 10)).toEqual({ amd: 3750, liters: 7.5, trips: 3 });
+  });
+
+  it('counts a trip at the start of the window and not one at its end', () => {
+    expect(periodFuelCost(log, at(16, 8, 0), at(16, 18, 0), 10)!.trips).toBe(1);
+  });
+
+  it('is undefined without consumption, so the tile shows "—" rather than 0 AMD', () => {
+    expect(periodFuelCost(log, today, Infinity, undefined)).toBeUndefined();
+  });
+
+  it('is undefined with no refuel price yet', () => {
+    const noPrice = [trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 20 })];
+    expect(periodFuelCost(noPrice, today, Infinity, 10)).toBeUndefined();
+  });
+
+  it('is undefined on a day with no trips, even with a refuel that day', () => {
+    const quiet = [refuel('f', at(16, 9, 0), 20, 10000)];
+    expect(periodFuelCost(quiet, today, Infinity, 10)).toBeUndefined();
+  });
+
+  it('skips a trip it cannot price and still counts the rest', () => {
+    const mixed = [
+      trip('early', at(16, 7, 0), 'x', 'y', { distanceKm: 10 }), // before any refuel
+      refuel('f', at(16, 9, 0), 20, 10000),
+      trip('late', at(16, 10, 0), 'y', 'x', { distanceKm: 10 }),
+    ];
+    expect(periodFuelCost(mixed, today, Infinity, 10)).toEqual({ amd: 500, liters: 1, trips: 1 });
+  });
+
+  it('prices each trip at the refuel before it', () => {
+    const two = [
+      refuel('f1', at(16, 7, 0), 10, 5000), // 500 AMD/L
+      trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 10 }),
+      refuel('f2', at(16, 9, 0), 10, 6000), // 600 AMD/L
+      trip('b', at(16, 10, 0), 'y', 'x', { distanceKm: 10 }),
+    ];
+    expect(periodFuelCost(two, today, Infinity, 10)!.amd).toBe(1100);
   });
 });
 

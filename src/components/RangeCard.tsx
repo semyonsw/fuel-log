@@ -22,10 +22,12 @@ const SPARK_H = 44;
 export const RangeCard = memo(function RangeCard({
   entries,
   range,
+  todayLine,
   weekLine,
 }: {
   entries: Entry[];
   range: string;
+  todayLine: string;
   weekLine: string;
 }) {
   const [w, setW] = useState(0);
@@ -71,6 +73,7 @@ export const RangeCard = memo(function RangeCard({
         </Text>
         <Text style={styles.unit}>{t('components.range.unit')}</Text>
       </View>
+      <Text style={styles.week}>{todayLine}</Text>
       <Text style={styles.week}>{weekLine}</Text>
       <View style={styles.spark} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
         {spark && w > 0 ? (

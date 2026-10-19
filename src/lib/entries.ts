@@ -172,11 +172,15 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
   return summary;
 }
 
-/** Local start of the period containing `now`: Monday 00:00, the 1st 00:00, or 0 for all time. */
-export function periodStart(period: 'week' | 'month' | 'all', now: number): number {
+/**
+ * Local start of the period containing `now`: today 00:00, Monday 00:00, the
+ * 1st 00:00, or 0 for all time.
+ */
+export function periodStart(period: 'today' | 'week' | 'month' | 'all', now: number): number {
   if (period === 'all') return 0;
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
+  if (period === 'today') return d.getTime();
   if (period === 'month') d.setDate(1);
   // Weeks start on Monday, as they do in Armenia; getDay() counts from Sunday.
   else d.setDate(d.getDate() - ((d.getDay() + 6) % 7));

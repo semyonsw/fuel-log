@@ -5,12 +5,13 @@ import { defineStrings } from '../define';
  * Settings, and the lib messages they display (calculator prompts, the
  * consumption note, backup errors). Keys are prefixed "summary.".
  *
- * Labels sit in half-width tiles and four period tabs share one row on a
+ * Labels sit in half-width tiles and five period tabs share one row on a
  * 360dp phone, so the translations are kept as short as the English.
  */
 export const summary = defineStrings(
   {
     'summary.title': 'Summary',
+    'summary.period.today': 'Today',
     'summary.period.week': 'Week',
     'summary.period.month': 'Month',
     'summary.period.all': 'All',
@@ -27,6 +28,7 @@ export const summary = defineStrings(
     'summary.tile.fuel': 'Fuel',
     'summary.tile.spent': 'Spent',
     'summary.tile.avgPrice': 'Avg price',
+    'summary.tile.driveCost': 'Driving cost ≈',
     'summary.perLiter': '{amd}/L',
     'summary.unit.km': 'km',
     'summary.unit.amdPerL': 'AMD/L',
@@ -99,6 +101,7 @@ export const summary = defineStrings(
   },
   {
     'summary.title': 'Ամփոփում',
+    'summary.period.today': 'Այսօր',
     'summary.period.week': 'Շաբաթ',
     'summary.period.month': 'Ամիս',
     'summary.period.all': 'Բոլորը',
@@ -115,6 +118,7 @@ export const summary = defineStrings(
     'summary.tile.fuel': 'Վառելիք',
     'summary.tile.spent': 'Ծախսված',
     'summary.tile.avgPrice': 'Միջին գին',
+    'summary.tile.driveCost': 'Ճանապարհի արժեք ≈',
     'summary.perLiter': '{amd}/լ',
     'summary.unit.km': 'կմ',
     'summary.unit.amdPerL': 'AMD/լ',
@@ -187,6 +191,7 @@ export const summary = defineStrings(
   },
   {
     'summary.title': 'Сводка',
+    'summary.period.today': 'Сегодня',
     'summary.period.week': 'Неделя',
     'summary.period.month': 'Месяц',
     'summary.period.all': 'Всё',
@@ -203,6 +208,7 @@ export const summary = defineStrings(
     'summary.tile.fuel': 'Топливо',
     'summary.tile.spent': 'Потрачено',
     'summary.tile.avgPrice': 'Средняя цена',
+    'summary.tile.driveCost': 'Стоимость поездок ≈',
     'summary.perLiter': '{amd}/л',
     'summary.unit.km': 'км',
     'summary.unit.amdPerL': 'AMD/л',

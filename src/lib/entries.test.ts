@@ -228,6 +228,22 @@ describe('periodStart', () => {
   // Fri 16 Oct 2026.
   const now = at(16, 19, 0);
 
+  it('starts today at local midnight', () => {
+    expect(periodStart('today', now)).toBe(at(16, 0, 0));
+    expect(periodStart('today', at(16, 0, 0))).toBe(at(16, 0, 0));
+    expect(periodStart('today', at(16, 23, 59))).toBe(at(16, 0, 0));
+  });
+
+  it('puts a drive just before midnight on the day it started', () => {
+    const entries = [
+      trip('late', at(15, 23, 40), 'x', 'y', { distanceKm: 12 }),
+      trip('early', at(16, 0, 10), 'y', 'x', { distanceKm: 5 }),
+    ];
+    const today = summarize(entries, periodStart('today', now), Infinity);
+    expect(today.trips).toBe(1);
+    expect(today.distanceKm).toBe(5);
+  });
+
   it('starts the week on Monday at local midnight', () => {
     expect(periodStart('week', now)).toBe(at(12, 0, 0));
   });

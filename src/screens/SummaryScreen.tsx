@@ -3,9 +3,9 @@
  * breakdown and the editable refuel (spending) history. (Export/import lives
  * on Settings, in DataSection.)
  *
- * Periods are Week / Month / All / Custom. Custom shows FROM and TO day
- * steppers (FROM ≤ TO ≤ today) and ends at the start of the day after TO, so
- * TO is a whole day. − / + repeat while held; tapping the day opens the
+ * Periods are Today / Week / Month / All / Custom, opening on Today. Custom
+ * shows FROM and TO day steppers (FROM ≤ TO ≤ today) and ends at the start of
+ * the day after TO, so TO is a whole day. − / + repeat while held; tapping the day opens the
  * calendar, for jumps of weeks. Tiles, BY DAY, REFUELS and the empty state
  * all follow the selected period.
  *
@@ -13,6 +13,11 @@
  * Per-day figures go through `summarize` over the FULL entry list with that
  * day's bounds (not over the day's entries alone), because range used is
  * measured from the previous reading, which may be on an earlier day.
+ *
+ * "Driving cost ≈" is what the period's trips cost in fuel, the sum of the
+ * per-trip estimates the Log shows (`periodFuelCost`). It sits beside
+ * "Spent", which is money paid at refuels: on most days nothing is paid, but
+ * the driving still burned fuel.
  *
  * The calculator's price is not remembered (it changes at every pump). Its
  * consumption is the one set in Settings (the Log's per-trip estimates use it
@@ -44,7 +49,9 @@ import {
   calculate,
   clampCustomRange,
   customPeriod,
+  effectiveKmPerLiter,
   latestPricePerLiter,
+  periodFuelCost,
   shiftDay,
   type CalcMode,
 } from '../lib/fuel';
@@ -55,9 +62,9 @@ import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry, RefuelEntry } from '../types';
 
-type Period = 'week' | 'month' | 'all' | 'custom';
+type Period = 'today' | 'week' | 'month' | 'all' | 'custom';
 // Labels are looked up at render time so they follow the current language.
-const PERIODS: Period[] = ['week', 'month', 'all', 'custom'];
+const PERIODS: Period[] = ['today', 'week', 'month', 'all', 'custom'];
 const MODES: { value: CalcMode; key: StringKey }[] = [
   { value: 'km', key: 'summary.calc.modeKm' },
   { value: 'amd', key: 'summary.calc.modeAmd' },
@@ -75,8 +82,9 @@ export function SummaryScreen({
 }) {
   const insets = useSafeAreaInsets();
   const entries = useLog((s) => s.entries);
+  const consumption = useSettings((s) => s.consumption);
   const now = useNow();
-  const [period, setPeriod] = useState<Period>('week');
+  const [period, setPeriod] = useState<Period>('today');
   // Custom starts as this month so far; not remembered between launches.
   const [custom, setCustom] = useState<[number, number]>(() => [
     periodStart('month', Date.now()),
@@ -91,6 +99,11 @@ export function SummaryScreen({
     [period, custom, now],
   );
   const total = useMemo(() => summarize(entries, from, to), [entries, from, to]);
+  const kmPerL = useMemo(() => effectiveKmPerLiter(entries, consumption), [entries, consumption]);
+  const cost = useMemo(
+    () => periodFuelCost(entries, from, to, kmPerL),
+    [entries, from, to, kmPerL],
+  );
   const inPeriod = useMemo(
     () => entries.filter((e) => e.at >= from && e.at < to),
     [entries, from, to],
@@ -115,6 +128,12 @@ export function SummaryScreen({
     { label: t('summary.tile.refuels'), value: String(total.refuels) },
     { label: t('summary.tile.fuel'), value: formatLiters(total.liters) },
     { label: t('summary.tile.spent'), value: formatAmd(total.spentAmd) },
+    {
+      label: t('summary.tile.driveCost'),
+      value: cost ? formatAmd(cost.amd) : '—',
+      accent: true,
+      full: true,
+    },
   ];
   if (total.liters > 0) {
     tiles.push({
