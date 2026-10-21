@@ -4,6 +4,8 @@ import { setLang } from '../i18n';
 
 import {
   drivenKm,
+  todayLine,
+  tripRangeUsedKm,
   currentRangeKm,
   dayKey,
   dayLabel,
@@ -266,6 +268,64 @@ describe('drivenKm', () => {
 
   it('reads the real notes of the 15th: 22.5 km typed + 23 km of range (106 → 83)', () => {
     expect(drivenKm(realNotes, at(15, 0, 0), today)).toBe(45.5);
+  });
+});
+
+describe('tripRangeUsedKm', () => {
+  // Fri 16 Oct 2026.
+  const today = at(16, 0, 0);
+
+  it("sums today's trips' range used, whatever their length", () => {
+    const log = [
+      reading('r', at(16, 7, 0), 100),
+      trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 10, rangeKm: 85 }), // 15
+      trip('b', at(16, 9, 0), 'y', 'x', { rangeKm: 70 }), // 15
+    ];
+    expect(tripRangeUsedKm(log, today, Infinity)).toBe(30);
+  });
+
+  it("measures from yesterday's reading and leaves out yesterday's trips", () => {
+    const log = [
+      reading('r', at(15, 7, 0), 120),
+      trip('y', at(15, 21, 0), 'x', 'y', { rangeKm: 100 }),
+      trip('a', at(16, 8, 0), 'x', 'y', { rangeKm: 90 }),
+    ];
+    expect(tripRangeUsedKm(log, today, Infinity)).toBe(10);
+  });
+
+  it("leaves out a reading's drop and trips with no range", () => {
+    const log = [
+      reading('r0', at(16, 7, 0), 100),
+      reading('r1', at(16, 8, 0), 95),
+      trip('a', at(16, 9, 0), 'x', 'y', { distanceKm: 12 }),
+    ];
+    expect(tripRangeUsedKm(log, today, Infinity)).toBe(0);
+  });
+});
+
+describe('todayLine', () => {
+  afterEach(() => setLang('en'));
+
+  it('shows length, range used and the cost from range', () => {
+    expect(todayLine({ driven: 38.9, used: 45, amd: 2160 })).toBe(
+      'Today: 38.9 km driven · 45 km range used · ≈ 2 160 AMD',
+    );
+  });
+
+  it('leaves out range used when the range did not drop', () => {
+    expect(todayLine({ driven: 12, used: 0, amd: 600 })).toBe('Today: 12 km driven · ≈ 600 AMD');
+  });
+
+  it('leaves out the cost when there is no estimate', () => {
+    expect(todayLine({ driven: 12, used: 15 })).toBe('Today: 12 km driven · 15 km range used');
+    expect(todayLine({ driven: 0, used: 0 })).toBe('Today: 0 km driven');
+  });
+
+  it('speaks the current language', () => {
+    setLang('ru');
+    expect(todayLine({ driven: 38.9, used: 45, amd: 2160 })).toBe(
+      'Сегодня: проехано 38.9 км · расход запаса 45 км · ≈ 2 160 AMD',
+    );
   });
 });
 

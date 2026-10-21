@@ -30,6 +30,8 @@
 import { t, type StringKey } from '../i18n';
 import type { Entry, TripEntry } from '../types';
 
+import { formatAmd, formatKm } from './numbers';
+
 /** Newest first; equal times fall back to id so a list never reshuffles on re-render. */
 export function sortNewestFirst(entries: Entry[]): Entry[] {
   return [...entries].sort((a, b) => b.at - a.at || compareIds(b.id, a.id));
@@ -174,9 +176,9 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
 
 /**
  * km driven in `fromMs <= at < toMs`: each trip's own distance, or, when it
- * has none, the range it used. The same rule `tripEstimates` prices, so a
- * "km · ≈ AMD" pair always describes the same kilometres; a trip logged with
- * only a dashboard reading still counts as driving.
+ * has none, the range it used, so a trip logged with only a dashboard reading
+ * still counts as driving. Its cost is priced from range used instead (see
+ * lib/fuel), which `tripRangeUsedKm` sums.
  */
 export function drivenKm(entries: Entry[], fromMs: number, toMs: number): number {
   const used = rangeUsedById(entries);
@@ -186,6 +188,33 @@ export function drivenKm(entries: Entry[], fromMs: number, toMs: number): number
     km += e.distanceKm !== undefined && e.distanceKm > 0 ? e.distanceKm : (used.get(e.id) ?? 0);
   }
   return km;
+}
+
+/**
+ * Dashboard range the trips in `fromMs <= at < toMs` used. Trips only, like
+ * the cost beside it on the Today line: a reading's drop is not a trip.
+ */
+export function tripRangeUsedKm(entries: Entry[], fromMs: number, toMs: number): number {
+  const used = rangeUsedById(entries);
+  let km = 0;
+  for (const e of entries) {
+    if (e.kind !== 'trip' || e.at < fromMs || e.at >= toMs) continue;
+    km += used.get(e.id) ?? 0;
+  }
+  return km;
+}
+
+/**
+ * The Log header's "Today: 38.9 km driven · 45 km range used · ≈ 2 160 AMD".
+ * Length and range used both show because the cost follows the range, not
+ * the length; a part with nothing to say (no range drop, no estimate) is left
+ * out rather than shown as 0.
+ */
+export function todayLine(today: { driven: number; used: number; amd?: number }): string {
+  const parts = [t('app.log.today', { driven: formatKm(today.driven) })];
+  if (today.used > 0) parts.push(t('app.log.todayUsed', { used: formatKm(today.used) }));
+  if (today.amd !== undefined) parts.push(t('app.log.todayCost', { cost: formatAmd(today.amd) }));
+  return parts.join(' · ');
 }
 
 /**

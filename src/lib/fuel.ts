@@ -14,11 +14,14 @@
  * ── A TRIP'S COST IS RECOMPUTED, NEVER STORED ────────────────────────────
  *
  * Like range used, the estimate is a pure function of the whole log: edit a
- * refuel or type a consumption and every trip's figure follows. The distance
- * travelled is the trip's distance when it has one (GPS or typed), else the
- * range it used. The price is the latest refuel at or before the trip — that
- * is the fuel that was in the tank. Missing any input means no estimate,
- * never a guess.
+ * refuel or type a consumption and every trip's figure follows. The km priced
+ * is the dashboard RANGE the trip used, not its length: traffic burns more
+ * range per km than the highway, and the range drop is what the fuel actually
+ * paid for. km/L is also measured in dashboard range (above), so the two
+ * agree. Only when the trip has no range used (no reading on either side, or
+ * the range did not drop) does its length stand in. The price is the latest
+ * refuel at or before the trip — that is the fuel that was in the tank.
+ * Missing any input means no estimate, never a guess.
  */
 
 import { t } from '../i18n';
@@ -102,6 +105,11 @@ export function kmForMoney(
   return { liters, km: Math.round(liters * kmPerL) };
 }
 
+/** The km a trip's cost is worked out from: the range it used, else its length. */
+export function tripCostKm(trip: TripEntry, rangeUsed: number | undefined): number | undefined {
+  return ok(rangeUsed) ? rangeUsed : trip.distanceKm;
+}
+
 /** The approximate fuel and money a trip used, or undefined when any input is missing. */
 export function tripFuelEstimate(
   trip: TripEntry,
@@ -109,8 +117,7 @@ export function tripFuelEstimate(
   rangeUsed: number | undefined,
   kmPerL: number | undefined,
 ): FuelResult | undefined {
-  const km = trip.distanceKm !== undefined && trip.distanceKm > 0 ? trip.distanceKm : rangeUsed;
-  return fuelCost(km, kmPerL, latestPricePerLiter(entries, trip.at));
+  return fuelCost(tripCostKm(trip, rangeUsed), kmPerL, latestPricePerLiter(entries, trip.at));
 }
 
 /**
@@ -132,8 +139,7 @@ export function tripEstimates(
   for (const e of asc) {
     if (e.kind === 'refuel' && e.liters > 0) price = e.priceAmd / e.liters;
     if (e.kind !== 'trip') continue;
-    const km = e.distanceKm !== undefined && e.distanceKm > 0 ? e.distanceKm : used.get(e.id);
-    const r = fuelCost(km, kmPerL, price);
+    const r = fuelCost(tripCostKm(e, used.get(e.id)), kmPerL, price);
     if (r) out.set(e.id, r);
   }
   return out;

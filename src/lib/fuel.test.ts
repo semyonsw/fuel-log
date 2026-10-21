@@ -15,6 +15,7 @@ import {
   latestPricePerLiter,
   periodFuelCost,
   shiftDay,
+  tripCostKm,
   tripEstimates,
   tripFuelEstimate,
 } from './fuel';
@@ -121,14 +122,41 @@ describe('tripFuelEstimate', () => {
     refuel('f', at(10, 9, 0), 30, 15000, 290), // 500 AMD/L, 8 km/L
   ];
 
-  it('uses the trip distance when it has one', () => {
+  it('prices the range used, not the trip length', () => {
+    // 16 km driven but the range fell 290 → 270: 20 km ÷ 8 = 2.5 L × 500.
     const t = trip('t', at(11, 9, 0), 'a', 'b', { distanceKm: 16, rangeKm: 270 });
     const log = [...base, t];
     const est = tripFuelEstimate(t, log, rangeUsedById(log).get('t'), 8);
-    expect(est).toEqual({ liters: 2, amd: 1000 });
+    expect(est).toEqual({ liters: 2.5, amd: 1250 });
   });
 
-  it('falls back to range used without a distance', () => {
+  it('the same length costs more in traffic than on the highway', () => {
+    const traffic = trip('t', at(11, 9, 0), 'a', 'b', { distanceKm: 20, rangeKm: 260 }); // 30 used
+    const highway = trip('h', at(11, 9, 0), 'a', 'b', { distanceKm: 20, rangeKm: 278 }); // 12 used
+    const cost = (t: typeof traffic) => {
+      const log = [...base, t];
+      return tripFuelEstimate(t, log, rangeUsedById(log).get(t.id), 8)!.amd;
+    };
+    expect(cost(traffic)).toBe(1875);
+    expect(cost(highway)).toBe(750);
+  });
+
+  it('falls back to the trip length when it has no range used', () => {
+    // No range reading on the trip, so no drop to price.
+    const t = trip('t', at(11, 9, 0), 'a', 'b', { distanceKm: 16 });
+    const log = [...base, t];
+    expect(rangeUsedById(log).get('t')).toBeUndefined();
+    expect(tripFuelEstimate(t, log, undefined, 8)).toEqual({ liters: 2, amd: 1000 });
+  });
+
+  it('falls back to the trip length when the range did not drop', () => {
+    const t = trip('t', at(11, 9, 0), 'a', 'b', { distanceKm: 16, rangeKm: 290 });
+    const log = [...base, t];
+    expect(rangeUsedById(log).get('t')).toBe(0);
+    expect(tripFuelEstimate(t, log, 0, 8)).toEqual({ liters: 2, amd: 1000 });
+  });
+
+  it('prices range used without a distance', () => {
     const t = trip('t', at(11, 9, 0), 'a', 'b', { rangeKm: 274 });
     const log = [...base, t];
     expect(tripFuelEstimate(t, log, rangeUsedById(log).get('t'), 8)).toEqual({
@@ -258,7 +286,25 @@ describe('tripEstimates', () => {
       expect(all.get(t.id)).toEqual(tripFuelEstimate(t, log, used.get(t.id), 8));
     }
     expect(all.has('a')).toBe(false);
+    expect(all.get('b')!.amd).toBe(1250); // 20 km of range, not 16 km of length
     expect(all.get('d')!.amd).toBe(600);
+  });
+});
+
+describe('tripCostKm', () => {
+  const t = trip('t', 0, 'a', 'b', { distanceKm: 16 });
+
+  it('is the range used when there is some', () => {
+    expect(tripCostKm(t, 25)).toBe(25);
+  });
+
+  it('is the trip length when range used is missing or zero', () => {
+    expect(tripCostKm(t, undefined)).toBe(16);
+    expect(tripCostKm(t, 0)).toBe(16);
+  });
+
+  it('is undefined with neither', () => {
+    expect(tripCostKm(trip('x', 0, 'a', 'b'), undefined)).toBeUndefined();
   });
 });
 
@@ -270,8 +316,9 @@ describe('periodFuelCost', () => {
     reading('r0', at(15, 8, 0), 300),
     refuel('f', at(15, 9, 0), 20, 10000),
     trip('y', at(15, 18, 0), 'x', 'y', { distanceKm: 40 }), // yesterday
+    // The refuel had no "range after", so a's drop is unknown: its 20 km length stands in.
     trip('a', at(16, 8, 0), 'x', 'y', { distanceKm: 20, rangeKm: 280 }),
-    trip('b', at(16, 18, 0), 'y', 'x', { rangeKm: 265 }), // no distance: range used, 15 km
+    trip('b', at(16, 18, 0), 'y', 'x', { distanceKm: 9, rangeKm: 265 }), // range used 15 km wins
     reading('r1', at(16, 19, 0), 265),
   ];
 

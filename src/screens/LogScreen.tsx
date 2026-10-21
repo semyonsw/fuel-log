@@ -28,9 +28,17 @@ import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
 import { t } from '../i18n';
 import { draftFromTrack, type Draft } from '../lib/draft';
-import { currentRangeKm, drivenKm, groupByDay, periodStart, rangeUsedById } from '../lib/entries';
+import {
+  currentRangeKm,
+  drivenKm,
+  groupByDay,
+  periodStart,
+  rangeUsedById,
+  todayLine,
+  tripRangeUsedKm,
+} from '../lib/entries';
 import { effectiveKmPerLiter, periodFuelCost, tripEstimates } from '../lib/fuel';
-import { formatAmd, formatKm } from '../lib/numbers';
+import { formatKm } from '../lib/numbers';
 import { guessEnds } from '../lib/placeGuess';
 import { liveDistanceKm, startTracking, stopTracking, useTracking } from '../services/tracking';
 import { useSettings } from '../state/settings';
@@ -74,7 +82,8 @@ export function LogScreen({
     const from = periodStart('today', now);
     return {
       driven: drivenKm(entries, from, Number.POSITIVE_INFINITY),
-      cost: periodFuelCost(entries, from, Number.POSITIVE_INFINITY, kmPerL),
+      used: tripRangeUsedKm(entries, from, Number.POSITIVE_INFINITY),
+      amd: periodFuelCost(entries, from, Number.POSITIVE_INFINITY, kmPerL)?.amd,
     };
   }, [entries, now, kmPerL]);
 
@@ -104,14 +113,7 @@ export function LogScreen({
       <RangeCard
         entries={entries}
         range={range === undefined ? '—' : splitUnit(formatKm(range))[0]}
-        todayLine={
-          today.cost
-            ? t('app.log.today', {
-                driven: formatKm(today.driven),
-                cost: formatAmd(today.cost.amd),
-              })
-            : t('app.log.todayNoCost', { driven: formatKm(today.driven) })
-        }
+        todayLine={todayLine(today)}
       />
       <Recorder entries={entries} now={now} onTripRecorded={onTripRecorded} />
     </View>
