@@ -11,8 +11,11 @@
  *
  * The timeline reads like the old notes, newest first, one card per day.
  * Rows in a day share one rounded card (corners on the first/last row only)
- * so a busy day reads as a unit. The AI, refuel and "+" buttons float bottom-right,
- * inside thumb reach, above the tab bar.
+ * so a busy day reads as a unit. The AI, expense, service, refuel and "+"
+ * buttons float bottom-right, inside thumb reach, above the tab bar.
+ *
+ * Service and expense entries carry no range, so the range card, range-used
+ * deltas and the Today line pass over them without special cases.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -24,6 +27,7 @@ import { splitUnit } from '../components/format';
 import { Fabs } from '../components/Fabs';
 import { RecordIcon } from '../components/icons';
 import { RangeCard } from '../components/RangeCard';
+import { ReminderBanner } from '../components/ReminderBanner';
 import { Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
 import { t } from '../i18n';
@@ -51,12 +55,16 @@ type Section = { key: string; title: string; data: Entry[] };
 export function LogScreen({
   onAdd,
   onAddRefuel,
+  onAddService,
+  onAddExpense,
   onEdit,
   onAi,
   onTripRecorded,
 }: {
   onAdd: () => void;
   onAddRefuel: () => void;
+  onAddService: () => void;
+  onAddExpense: () => void;
   onEdit: (entry: Entry) => void;
   onAi: () => void;
   onTripRecorded: (
@@ -115,6 +123,14 @@ export function LogScreen({
         range={range === undefined ? '—' : splitUnit(formatKm(range))[0]}
         todayLine={todayLine(today)}
       />
+      <ReminderBanner
+        entries={entries}
+        now={now}
+        onPress={(id) => {
+          const service = entries.find((e) => e.id === id);
+          if (service) onEdit(service);
+        }}
+      />
       <Recorder entries={entries} now={now} onTripRecorded={onTripRecorded} />
     </View>
   );
@@ -138,9 +154,40 @@ export function LogScreen({
         }
         contentContainerStyle={styles.list}
       />
-      <Fabs onAi={onAi} onRefuel={onAddRefuel} onAdd={onAdd} />
+      <Fabs
+        onAi={onAi}
+        onExpense={onAddExpense}
+        onService={onAddService}
+        onRefuel={onAddRefuel}
+        onAdd={onAdd}
+      />
     </View>
   );
+}
+
+/**
+ * Start recording, and when that is refused say why and offer the way out.
+ * Shared by the Start button and the "Start trip" app-icon shortcut, so both
+ * go through the same permission prompts. A trip already recording is left
+ * alone: starting again would wipe the route recorded so far.
+ */
+export async function startTrip(): Promise<void> {
+  if (useTracking.getState().startedAt !== null) return;
+  const r = await startTracking();
+  if (r === 'started') return;
+  if (r === 'no-background') {
+    Alert.alert(t('app.log.bgTitle'), t('app.log.bgText'), [
+      { text: t('app.log.notNow'), style: 'cancel' },
+      { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
+    ]);
+  } else if (r === 'no-permission') {
+    Alert.alert(t('app.log.permTitle'), t('app.log.permText'), [
+      { text: t('app.log.notNow'), style: 'cancel' },
+      { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
+    ]);
+  } else {
+    Alert.alert(t('app.log.failTitle'), t('app.log.failText'));
+  }
 }
 
 function Recorder({
@@ -161,22 +208,8 @@ function Recorder({
 
   const start = async () => {
     setBusy(true);
-    const r = await startTracking();
+    await startTrip();
     setBusy(false);
-    if (r === 'started') return;
-    if (r === 'no-background') {
-      Alert.alert(t('app.log.bgTitle'), t('app.log.bgText'), [
-        { text: t('app.log.notNow'), style: 'cancel' },
-        { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
-      ]);
-    } else if (r === 'no-permission') {
-      Alert.alert(t('app.log.permTitle'), t('app.log.permText'), [
-        { text: t('app.log.notNow'), style: 'cancel' },
-        { text: t('app.log.openSettings'), onPress: () => Linking.openSettings() },
-      ]);
-    } else {
-      Alert.alert(t('app.log.failTitle'), t('app.log.failText'));
-    }
   };
 
   const stop = async () => {

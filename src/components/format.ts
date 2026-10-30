@@ -2,20 +2,13 @@
  * Small display helpers the UI needs that src/lib doesn't provide.
  *
  * Kept here rather than in src/lib because lib is owned by the data layer and
- * these are purely presentational (how a delta or a "when" label reads).
+ * these are purely presentational (how a delta or a unit reads).
  */
-
-import { dayKey, dayLabel, formatTime } from '../lib/entries';
 
 /** A bare number with at most one decimal: 15 → "15", 14.25 → "14.3". */
 export function formatDelta(n: number): string {
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
-}
-
-/** "Today 13:31", "Yesterday 21:00", "Thu, 15 Oct 09:10". */
-export function whenLabel(at: number, now: number): string {
-  return `${dayLabel(dayKey(at), now)} ${formatTime(at)}`;
 }
 
 /**

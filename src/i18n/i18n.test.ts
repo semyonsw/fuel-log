@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { getLang, plural, pluralForm, setLang, t } from './index';
+import { plural, pluralForm, setLang, t } from './index';
 import { STRINGS } from './strings';
 
 /** The three tables must stay in lockstep, and templating must not lose a value. */
@@ -27,7 +27,6 @@ describe('t', () => {
   it('reads the current language', () => {
     expect(t('common.today')).toBe('Today');
     setLang('ru');
-    expect(getLang()).toBe('ru');
     expect(t('common.today')).toBe('Сегодня');
     setLang('hy');
     expect(t('common.today')).toBe('Այսօր');

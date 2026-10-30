@@ -50,8 +50,6 @@ interface LogState {
   setAll: (entries: Entry[]) => void;
 }
 
-export { sanitizeEntries };
-
 export const useLog = create<LogState>()(
   persist(
     (set) => ({
@@ -85,13 +83,3 @@ export const useLog = create<LogState>()(
     },
   ),
 );
-
-const selectEntries = (s: LogState) => s.entries;
-const selectHydrated = (s: LogState) => s.hydrated;
-
-/** The entries and whether they have been read yet — two stable selections, no new objects. */
-export function useHydratedLog(): { entries: Entry[]; hydrated: boolean } {
-  const entries = useLog(selectEntries);
-  const hydrated = useLog(selectHydrated);
-  return { entries, hydrated };
-}

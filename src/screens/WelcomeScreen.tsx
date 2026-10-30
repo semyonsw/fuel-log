@@ -34,6 +34,9 @@ export function WelcomeScreen() {
   const [busy, setBusy] = useState(false);
 
   const allow = async () => {
+    // The button only looks dim while asking; a second press would start a
+    // second round of system prompts and folder pickers on top of the first.
+    if (busy) return;
     setBusy(true);
     setReport(await requestAll());
     setBusy(false);

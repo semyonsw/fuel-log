@@ -220,6 +220,45 @@ describe('chat', () => {
     expect(c.messages[0].proposals).toEqual([{ ...emptyProposal('reading'), rangeKm: 54 }]);
   });
 
+  it('chats saved before edits and deletes still load: their proposals are adds', () => {
+    const old = {
+      ...newChat('c', 1),
+      messages: [
+        {
+          id: 'm',
+          role: 'model',
+          text: 'x',
+          at: 2,
+          proposals: [{ kind: 'refuel', liters: 15, priceAmd: 9000, clock: '18:40' }],
+          savedIds: ['e1'],
+        },
+      ],
+    };
+    const [c] = sanitizeChats([old]);
+    expect(c.messages[0].proposals).toEqual([
+      { ...emptyProposal('refuel'), liters: 15, priceAmd: 9000, clock: '18:40' },
+    ]);
+    expect(c.messages[0].savedIds).toEqual(['e1']);
+  });
+
+  it('an edit card keeps its target and the entry it was', () => {
+    const before = { ...emptyProposal('refuel'), liters: 20 };
+    const { op: _op, target: _t, before: _b, ...values } = before;
+    const edit = { ...before, op: 'update', target: 'f1', liters: 30, before: values };
+    const [c] = sanitizeChats([
+      {
+        ...newChat('c', 1),
+        messages: [{ id: 'm', role: 'model', text: '', at: 2, proposals: [edit] }],
+      },
+    ]);
+    expect(c.messages[0].proposals![0]).toMatchObject({
+      op: 'update',
+      target: 'f1',
+      liters: 30,
+      before: { liters: 20 },
+    });
+  });
+
   it('sorts newest first; sanitises junk', () => {
     const a = { ...newChat('a', 1), updatedAt: 5 };
     const b = { ...newChat('b', 2), updatedAt: 9 };

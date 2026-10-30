@@ -7,6 +7,9 @@
  *   backupDirUri  the folder the user granted once for auto-backup (an SAF
  *                 tree URI; Android keeps the grant across app updates).
  *   onboarded     the welcome/permissions screen has been answered.
+ *   fuelBudget,   monthly budgets in AMD as typed (blank = none): refuels
+ *   expenseBudget count against the first, services and expenses against
+ *                 the second.
  *   language      the UI language chosen in Settings. Settings saved before
  *                 it existed have none and read back as English (`merge`).
  *
@@ -29,6 +32,8 @@ export type BackupStatus =
 
 interface SettingsState {
   consumption: string;
+  fuelBudget: string;
+  expenseBudget: string;
   geminiModel: string;
   backupDirUri?: string;
   onboarded: boolean;
@@ -43,6 +48,8 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       consumption: '',
+      fuelBudget: '',
+      expenseBudget: '',
       geminiModel: DEFAULT_MODEL,
       onboarded: false,
       language: DEFAULT_LANGUAGE,
@@ -56,6 +63,8 @@ export const useSettings = create<SettingsState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
         consumption: s.consumption,
+        fuelBudget: s.fuelBudget,
+        expenseBudget: s.expenseBudget,
         geminiModel: s.geminiModel,
         backupDirUri: s.backupDirUri,
         onboarded: s.onboarded,

@@ -10,7 +10,13 @@
  */
 
 import { t, type StringKey } from '../i18n';
-import { parseChatReply, REPLY_SCHEMA, SYSTEM_PROMPT, type ChatReply } from './assistant';
+import {
+  parseChatReply,
+  REPLY_SCHEMA,
+  systemText,
+  type ChatContext,
+  type ChatReply,
+} from './assistant';
 
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 export const TIMEOUT_MS = 45_000;
@@ -53,20 +59,6 @@ export function errorText(e: GeminiError): string {
   return t(ERROR_KEYS[e]);
 }
 
-/**
- * `ERROR_TEXT[e]` still works for existing callers: each entry is a getter,
- * so it reads in the language current at the moment it is looked up.
- */
-export const ERROR_TEXT = Object.defineProperties(
-  {} as Record<GeminiError, string>,
-  Object.fromEntries(
-    (Object.keys(ERROR_KEYS) as GeminiError[]).map((e) => [
-      e,
-      { get: () => errorText(e), enumerable: true },
-    ]),
-  ),
-);
-
 export type ChatResult = { ok: true; reply: ChatReply } | { ok: false; error: GeminiError };
 
 type Content = {
@@ -94,11 +86,10 @@ export function mergeTurns(turns: Turn[]): Content[] {
   return out;
 }
 
-export function buildRequest(turns: Turn[], logJson: string) {
+/** The prompt, today's date, the app's facts and the log go in the system instruction. */
+export function buildRequest(turns: Turn[], context: ChatContext) {
   return {
-    systemInstruction: {
-      parts: [{ text: `${SYSTEM_PROMPT}\n\nThe user's log (JSON, oldest first):\n${logJson}` }],
-    },
+    systemInstruction: { parts: [{ text: systemText(context) }] },
     contents: mergeTurns(turns),
     generationConfig: { responseMimeType: 'application/json', responseSchema: REPLY_SCHEMA },
   };
@@ -136,7 +127,7 @@ export async function sendChat(opts: {
   apiKey: string;
   model: string;
   turns: Turn[];
-  logJson: string;
+  context: ChatContext;
   fetch: Fetch;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -146,7 +137,7 @@ export async function sendChat(opts: {
     const res = await opts.fetch(`${GEMINI_BASE}/models/${opts.model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.apiKey },
-      body: JSON.stringify(buildRequest(opts.turns, opts.logJson)),
+      body: JSON.stringify(buildRequest(opts.turns, opts.context)),
       signal: t.signal,
     });
     const body = await res.text();

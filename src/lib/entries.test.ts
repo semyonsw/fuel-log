@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setLang } from '../i18n';
 
 import {
+  entryAmd,
+  isCost,
   drivenKm,
   todayLine,
   tripRangeUsedKm,
@@ -13,11 +15,28 @@ import {
   groupByDay,
   periodStart,
   rangeUsedById,
-  routeLabel,
   sortNewestFirst,
   summarize,
 } from './entries';
 import { at, reading, realNotes, refuel, trip } from './entries.fixtures';
+import type { ExpenseEntry, ServiceEntry } from '../types';
+
+const service = (id: string, when: number, costAmd: number, rangeKm?: number): ServiceEntry => ({
+  id,
+  at: when,
+  kind: 'service',
+  category: 'oil',
+  costAmd,
+  ...(rangeKm !== undefined ? { rangeKm } : {}),
+});
+const expense = (id: string, when: number, amountAmd: number, rangeKm?: number): ExpenseEntry => ({
+  id,
+  at: when,
+  kind: 'expense',
+  category: 'parking',
+  amountAmd,
+  ...(rangeKm !== undefined ? { rangeKm } : {}),
+});
 
 /**
  * The derived numbers, checked against the real notes first and then against the
@@ -57,6 +76,17 @@ describe('rangeUsedById', () => {
 
   it('does not depend on input order', () => {
     expect(rangeUsedById([...realNotes].reverse())).toEqual(rangeUsedById(realNotes));
+  });
+
+  it('ignores services and expenses, even one that carries a range', () => {
+    const withCosts = [
+      ...realNotes,
+      service('s', at(15, 14, 0), 20000, 999),
+      expense('x', at(16, 9, 0), 500, 0),
+      expense('y', at(16, 10, 0), 300),
+    ];
+    expect(rangeUsedById(withCosts)).toEqual(rangeUsedById(realNotes));
+    expect(currentRangeKm([...realNotes, expense('z', at(17, 9, 0), 1, 5)])).toBe(54);
   });
 
   it('has no baseline for the first reading', () => {
@@ -135,21 +165,6 @@ describe('currentRangeKm', () => {
   });
 });
 
-describe('routeLabel', () => {
-  it('joins from, stops and to', () => {
-    expect(routeLabel(trip('t', 0, '4micro', 'work', { stops: ['Erebuni', 'Center'] }))).toBe(
-      '4micro → Erebuni → Center → work',
-    );
-  });
-
-  it('skips empty parts', () => {
-    expect(routeLabel(trip('t', 0, '', 'work', { stops: [' ', 'Erebuni'] }))).toBe(
-      'Erebuni → work',
-    );
-    expect(routeLabel(trip('t', 0, '', ''))).toBe('');
-  });
-});
-
 describe('days and times', () => {
   const now = at(16, 19, 0);
 
@@ -206,6 +221,9 @@ describe('summarize', () => {
       refuels: 0,
       liters: 0,
       spentAmd: 0,
+      services: 0,
+      expenses: 0,
+      otherAmd: 0,
     });
   });
 
@@ -218,7 +236,28 @@ describe('summarize', () => {
       refuels: 1,
       liters: 30,
       spentAmd: 15000,
+      services: 0,
+      expenses: 0,
+      otherAmd: 0,
     });
+  });
+
+  it('counts services and expenses as other spending, never as fuel', () => {
+    const entries = [
+      ...realNotes,
+      refuel('f', at(16, 19, 0), 30, 15000, 400),
+      service('s', at(16, 9, 0), 25000),
+      expense('x', at(16, 10, 0), 500),
+    ];
+    const s = summarize(entries, 0, Infinity);
+    expect(s.spentAmd).toBe(15000);
+    expect(s.liters).toBe(30);
+    expect(s.services).toBe(1);
+    expect(s.expenses).toBe(1);
+    expect(s.otherAmd).toBe(25500);
+    // Nothing about driving moved.
+    expect(s.rangeUsedKm).toBe(68);
+    expect(s.trips).toBe(4);
   });
 
   it('includes the start of the window and excludes the end', () => {
@@ -391,5 +430,22 @@ describe('dayLabel in other languages', () => {
     expect(dayLabel('2026-10-15', now)).toBe('Երեկ');
     expect(dayLabel('2026-10-15', at(17, 8, 0))).toBe('Հնգ, 15 հոկ');
     expect(groupByDay(realNotes, now).map((g) => g.label)).toEqual(['Այսօր', 'Երեկ']);
+  });
+});
+
+describe('entryAmd / isCost', () => {
+  it('reads the money field of each kind', () => {
+    expect(entryAmd(refuel('f', 0, 10, 5000))).toBe(5000);
+    expect(entryAmd(service('s', 0, 0))).toBe(0);
+    expect(entryAmd(expense('x', 0, 700))).toBe(700);
+    expect(entryAmd(reading('r', 0, 100))).toBeUndefined();
+    expect(entryAmd(trip('t', 0, 'a', 'b'))).toBeUndefined();
+  });
+
+  it('marks only services and expenses as costs', () => {
+    expect(isCost(service('s', 0, 1))).toBe(true);
+    expect(isCost(expense('x', 0, 1))).toBe(true);
+    expect(isCost(refuel('f', 0, 10, 5000))).toBe(false);
+    expect(isCost(trip('t', 0, 'a', 'b'))).toBe(false);
   });
 });

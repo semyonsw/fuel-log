@@ -26,6 +26,7 @@ import { t } from '../i18n';
 import {
   backupFileName,
   buildBackup,
+  importedSettings,
   mergeById,
   parseBackup,
   serializeBackup,
@@ -49,7 +50,12 @@ function currentBackup(now: number): Backup {
   return buildBackup({
     entries: useLog.getState().entries,
     chats: useChats.getState().chats,
-    settings: { consumption: s.consumption, geminiModel: s.geminiModel },
+    settings: {
+      consumption: s.consumption,
+      geminiModel: s.geminiModel,
+      fuelBudget: s.fuelBudget,
+      expenseBudget: s.expenseBudget,
+    },
     apiKey: s.apiKey,
     appVersion: appVersion(),
     now,
@@ -86,7 +92,9 @@ async function writeOnce(): Promise<boolean> {
   try {
     const uri = await SAF.createFileAsync(dir, name, 'application/json');
     await SAF.writeAsStringAsync(uri, serializeBackup(currentBackup(now)));
-    const listed = await SAF.readDirectoryAsync(dir);
+    // The new file is safely written by now; failing to tidy the old ones only
+    // leaves an extra file, and must not report the backup itself as failed.
+    const listed = await SAF.readDirectoryAsync(dir).catch(() => [] as string[]);
     for (const old of staleBackups(listed, uri)) {
       await SAF.deleteAsync(old, { idempotent: true }).catch(() => {});
     }
@@ -122,6 +130,8 @@ export function startAutoBackup(): () => void {
     useSettings.subscribe(
       (s, p) =>
         (s.consumption !== p.consumption ||
+          s.fuelBudget !== p.fuelBudget ||
+          s.expenseBudget !== p.expenseBudget ||
           s.geminiModel !== p.geminiModel ||
           s.apiKey !== p.apiKey) &&
         schedule(),
@@ -164,13 +174,8 @@ export async function applyBackup(b: Backup, mode: 'merge' | 'replace') {
     updated = m.updated;
   }
   const s = useSettings.getState();
-  // Settings from the file fill in what this phone does not have; in Replace
-  // mode the file wins outright.
-  s.set({
-    consumption: mode === 'replace' || !s.consumption ? b.settings.consumption : s.consumption,
-    geminiModel:
-      mode === 'replace' || !s.geminiModel ? resolveModel(b.settings.geminiModel) : s.geminiModel,
-  });
+  const next = importedSettings(s, b.settings, mode);
+  s.set({ ...next, geminiModel: resolveModel(next.geminiModel) });
   if (b.geminiApiKey && (mode === 'replace' || !s.apiKey)) await saveApiKey(b.geminiApiKey);
   return { added, updated, total: useLog.getState().entries.length };
 }

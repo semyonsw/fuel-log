@@ -1,5 +1,6 @@
 /**
- * AI chat (Gemini): read dashboard photos, answer questions about the log.
+ * AI chat (Gemini): read dashboard photos, log, fix and delete entries, and
+ * answer questions about the log.
  *
  * ── A CHAT, NOT A FORM ───────────────────────────────────────────────────
  *
@@ -11,6 +12,11 @@
  * one Approve saves all of them to the log, through the same validation as
  * the form. Saved entries stay editable in the log like any other.
  *
+ * Fixing the log works the same way: "it was 30 L, not 20" comes back as an
+ * edit card with 20 → 30 marked, "delete yesterday's reading" as a card that
+ * shows the entry and a red Delete. Nothing the model says changes the log
+ * until that card is approved.
+ *
  * ── HISTORY ──────────────────────────────────────────────────────────────
  *
  * Chats are kept (text and readings; photos never) and listed newest first;
@@ -19,9 +25,11 @@
  *
  * ── WHAT IS SENT ─────────────────────────────────────────────────────────
  *
- * Each turn sends the chat so far, any photo still in memory, and the log
- * (so questions about spending or trips can be answered). The first time,
- * the key prompt says so plainly; the key itself stays on the phone.
+ * Each turn sends the chat so far, any photo still in memory, the log (with a
+ * short ref per entry so the model can point at one), today's date, and the
+ * totals the app computed itself (lib/insights) so the model quotes numbers
+ * instead of adding them up. The first time, the key prompt says so plainly;
+ * the key itself stays on the phone.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -52,7 +60,7 @@ import {
 } from '../components/icons';
 import * as Haptics from 'expo-haptics';
 
-import { Button, Chip, ConfirmSheet, Segmented, Sheet, Tap } from '../components/ui';
+import { Button, Chip, ConfirmSheet, Sheet, Tap } from '../components/ui';
 import {
   appendMessage,
   newChat,
@@ -62,18 +70,33 @@ import {
   type ChatMessage,
 } from '../lib/chat';
 import {
-  logContext,
+  applyChanges,
+  changedFields,
+  chatContext,
+  historyText,
   MAX_LITERS,
+  MAX_ODOMETER_KM,
   MAX_PRICE_AMD,
   MAX_RANGE_KM,
+  MAX_REMIND_KM,
+  MAX_REMIND_MONTHS,
   MAX_TRIP_KM,
   nudge,
   parseClock,
-  proposalsToEntries,
+  parseDate,
+  resolveChanges,
   type Proposal,
+  type ProposalValues,
 } from '../lib/assistant';
+import {
+  EXPENSE_CATEGORIES,
+  expenseLabel,
+  SERVICE_CATEGORIES,
+  serviceLabel,
+} from '../lib/categories';
+import { formKinds } from '../lib/draft';
 import { dayKey, dayLabel, formatTime } from '../lib/entries';
-import { ERROR_TEXT, listModels, sendChat, type Turn } from '../lib/gemini';
+import { errorText, listModels, sendChat, type Turn } from '../lib/gemini';
 import { newId } from '../lib/id';
 import {
   availableModels,
@@ -83,23 +106,40 @@ import {
   type GeminiModel,
 } from '../lib/models';
 import { formatAmd, parseNumber } from '../lib/numbers';
-import { FUEL_GRADES } from '../lib/stations';
+import { FUEL_GRADES, gradeLabel } from '../lib/stations';
 import { takePhoto, type Photo } from '../services/photo';
 import { saveApiKey } from '../services/secrets';
-import { plural, t } from '../i18n';
+import { plural, t, type StringKey } from '../i18n';
 import { useChats } from '../state/chats';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
-import type { EntryKind } from '../types';
+import type { EntryKind, ExpenseCategory, ServiceCategory } from '../types';
 
-/** A function, not a table, so the title follows the language at render time. */
-const kindTitle = (kind: EntryKind): string =>
-  kind === 'reading'
-    ? t('chat.kind.reading')
-    : kind === 'trip'
-      ? t('chat.kind.trip')
-      : t('chat.kind.refuel');
+/** Functions, not tables, so the words follow the language at render time. */
+const KIND_KEYS: Record<EntryKind, StringKey> = {
+  reading: 'chat.kind.reading',
+  trip: 'chat.kind.trip',
+  refuel: 'chat.kind.refuel',
+  service: 'kinds.service',
+  expense: 'kinds.expense',
+};
+const kindTitle = (kind: EntryKind): string => t(KIND_KEYS[kind]);
+
+const KIND_CHIPS: { value: EntryKind; key: StringKey }[] = [
+  { value: 'trip', key: 'chat.seg.trip' },
+  { value: 'reading', key: 'chat.seg.reading' },
+  { value: 'refuel', key: 'chat.seg.refuel' },
+  { value: 'service', key: 'kinds.service' },
+  { value: 'expense', key: 'kinds.expense' },
+];
+
+/** The empty chat's starters: the questions the app now has exact answers for. */
+const SUGGESTIONS: StringKey[] = [
+  'insights.chip.spent',
+  'insights.chip.odd',
+  'insights.chip.refuel',
+];
 
 export function ChatScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
@@ -107,6 +147,8 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
   const putChat = useChats((s) => s.put);
   const removeChat = useChats((s) => s.remove);
   const addEntry = useLog((s) => s.add);
+  const updateEntry = useLog((s) => s.update);
+  const removeEntry = useLog((s) => s.remove);
   /** Per message: why Approve could not save, one line per card. */
   const [problems, setProblems] = useState<Record<string, (string | undefined)[]>>({});
   const apiKey = useSettings((s) => s.apiKey);
@@ -124,6 +166,8 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
   // Photos of this session, by user message id. Never persisted.
   const photos = useRef(new Map<string, Photo>());
   const abort = useRef<AbortController | null>(null);
+  // `sending` is state and lags a render; two taps in one frame would both pass it.
+  const inFlight = useRef(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const chat = chats.find((c) => c.id === chatId);
@@ -161,7 +205,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
 
   const send = async () => {
     const body = text.trim();
-    if ((!body && !pending) || sending) return;
+    if ((!body && !pending) || sending || inFlight.current) return;
     if (!apiKey) {
       setKeySheet(true);
       return;
@@ -182,7 +226,10 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
     setText('');
     setPending(null);
     setSending(true);
+    inFlight.current = true;
 
+    // Refs are handed out for this request only; the answer is read with the same map.
+    const ctx = chatContext(useLog.getState().entries, now, useSettings.getState().consumption);
     const turns: Turn[] = c.messages
       .filter((m) => !m.error)
       .map((m) =>
@@ -198,10 +245,7 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
                   : ''),
               imageBase64: photos.current.get(m.id)?.base64,
             }
-          : {
-              role: 'model',
-              text: JSON.stringify({ reply: m.text, entries: m.proposals ?? [] }),
-            },
+          : { role: 'model', text: historyText(m.text, m.proposals, ctx.idToRef, m.savedIds) },
       );
 
     const ctrl = new AbortController();
@@ -210,24 +254,31 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
       apiKey,
       model,
       turns,
-      logJson: logContext(useLog.getState().entries),
+      context: ctx,
       fetch: (u, i) => fetch(u, i),
       signal: ctrl.signal,
     });
     abort.current = null;
+    inFlight.current = false;
     setSending(false);
     if (!res.ok && res.error === 'cancelled') return;
-    const latest = useChats.getState().chats.find((x) => x.id === c.id) ?? c;
+    // Deleted while the answer was on its way: the answer goes with it.
+    const latest = useChats.getState().chats.find((x) => x.id === c.id);
+    if (!latest) return;
+    // Changes aimed at an entry the log does not have are dropped here.
+    const changes = res.ok
+      ? resolveChanges(res.reply.changes, useLog.getState().entries, ctx.refToId)
+      : [];
     const reply: ChatMessage = res.ok
       ? {
           id: newId(),
           role: 'model',
-          text: res.reply.reply || (res.reply.entries.length ? t('chat.checkAndApprove') : ''),
+          text: res.reply.reply || (changes.length ? t('chat.checkAndApprove') : ''),
           at: Date.now(),
-          ...(res.reply.entries.length ? { proposals: res.reply.entries } : {}),
+          ...(changes.length ? { proposals: changes } : {}),
           ...(res.reply.confidence ? { confidence: res.reply.confidence } : {}),
         }
-      : { id: newId(), role: 'model', text: ERROR_TEXT[res.error], at: Date.now(), error: true };
+      : { id: newId(), role: 'model', text: errorText(res.error), at: Date.now(), error: true };
     putChat(appendMessage(latest, reply));
     if (!res.ok && res.error === 'bad-key') setKeySheet(true);
   };
@@ -240,19 +291,21 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
     setProblems((p) => ({ ...p, [messageId]: [] }));
   };
 
-  /** Approve: all cards into the log at once, or nothing and say why. */
+  /** Approve: every card's change into the log at once, or nothing and say why. */
   const approve = (messageId: string) => {
     const c = currentChat();
     const msg = c?.messages.find((m) => m.id === messageId);
     if (!c || !msg?.proposals?.length || msg.savedIds) return;
-    const r = proposalsToEntries(msg.proposals, Date.now(), newId);
+    const r = applyChanges(msg.proposals, useLog.getState().entries, Date.now(), newId);
     if (!r.ok) {
       setProblems((p) => ({ ...p, [messageId]: r.problems }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       return;
     }
-    r.entries.forEach(addEntry);
-    putChat(updateMessage(c, messageId, { savedIds: r.entries.map((e) => e.id) }));
+    r.added.forEach(addEntry);
+    r.updated.forEach(updateEntry);
+    r.removed.forEach(removeEntry);
+    putChat(updateMessage(c, messageId, { savedIds: r.ids }));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
 
@@ -333,6 +386,12 @@ export function ChatScreen({ onClose }: { onClose: () => void }) {
                   {!apiKey ? (
                     <Button label={t('chat.addGeminiKey')} onPress={() => setKeySheet(true)} />
                   ) : null}
+                  <Text style={styles.suggestLabel}>{t('insights.chips.label')}</Text>
+                  <View style={styles.suggestions}>
+                    {SUGGESTIONS.map((k) => (
+                      <Chip key={k} label={t(k)} onPress={() => setText(t(k))} />
+                    ))}
+                  </View>
                 </View>
               }
               renderItem={({ item }) => (
@@ -493,9 +552,39 @@ function Bubble({
   );
 }
 
+/** What the card's button and footer say, from the mix of changes it holds. */
+function cardWords(proposals: Proposal[]) {
+  const n = proposals.length;
+  const allDelete = proposals.every((p) => p.op === 'delete');
+  const anyEdit = proposals.some((p) => p.op !== 'add');
+  if (allDelete) {
+    return {
+      approve: n > 1 ? plural('insights.deleteN', n) : t('insights.delete'),
+      saved: t('insights.deleted'),
+      foot: t('insights.deleteFoot'),
+      danger: true,
+    };
+  }
+  if (anyEdit) {
+    return {
+      approve: n > 1 ? plural('insights.applyN', n) : t('insights.apply'),
+      saved: n > 1 ? plural('insights.savedChanges', n) : t('insights.updated'),
+      foot: t('insights.updateFoot'),
+      danger: false,
+    };
+  }
+  return {
+    approve: n > 1 ? plural('chat.approveN', n) : t('chat.approve'),
+    saved: n > 1 ? plural('chat.savedN', n) : t('chat.saved'),
+    foot: t('chat.approveFoot'),
+    danger: false,
+  };
+}
+
 /**
- * The entries an answer proposes, each as an editable card, and one Approve
- * for all of them. After saving, the cards stay as a read-only record.
+ * The changes an answer proposes, each as an editable card, and one Approve
+ * for all of them. A delete card is read-only: what it shows is what goes.
+ * After saving, the cards stay as a read-only record.
  */
 function Proposals({
   proposals,
@@ -515,63 +604,96 @@ function Proposals({
   const edit = (i: number, patch: Partial<Proposal>) =>
     onChange(proposals.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const remove = (i: number) => onChange(proposals.filter((_, j) => j !== i));
+  const words = cardWords(proposals);
+  const hasDelete = proposals.some((p) => p.op === 'delete');
 
   return (
-    <View style={[styles.card, saved && styles.cardSaved]}>
+    <View style={[styles.card, hasDelete && styles.cardDanger, saved && styles.cardSaved]}>
       {lowConfidence && !saved ? (
         <Text style={styles.cardWarn}>{t('chat.lowConfidence')}</Text>
       ) : null}
-      {proposals.map((p, i) => (
-        <View key={i} style={[styles.prop, i > 0 && styles.propDivider]}>
-          <View style={styles.cardHead}>
-            <Text style={styles.cardTitle}>
-              {proposals.length > 1 ? `${i + 1}. ` : ''}
-              {kindTitle(p.kind)}
-            </Text>
-            {!saved && proposals.length > 1 ? (
-              <Tap
-                onPress={() => remove(i)}
-                accessibilityRole="button"
-                accessibilityLabel={t('chat.removeKindA11y', { kind: kindTitle(p.kind) })}
-                hitSlop={10}
-              >
-                <Text style={styles.removeText}>{t('chat.remove')}</Text>
-              </Tap>
+      {proposals.map((p, i) => {
+        // An edit may switch only as far as the form could (trip ↔ reading).
+        const kinds =
+          p.op === 'add'
+            ? KIND_CHIPS
+            : p.op === 'update'
+              ? KIND_CHIPS.filter((k) => formKinds(p.before?.kind ?? p.kind).includes(k.value))
+              : [];
+        const title =
+          p.op === 'add'
+            ? kindTitle(p.kind)
+            : `${t(p.op === 'update' ? 'insights.op.update' : 'insights.op.delete')} · ${kindTitle(p.kind)}`;
+        return (
+          <View key={i} style={[styles.prop, i > 0 && styles.propDivider]}>
+            <View style={styles.cardHead}>
+              <Text style={[styles.cardTitle, p.op === 'delete' && { color: colors.danger }]}>
+                {proposals.length > 1 ? `${i + 1}. ` : ''}
+                {title}
+              </Text>
+              {!saved && proposals.length > 1 ? (
+                <Tap
+                  onPress={() => remove(i)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.removeKindA11y', { kind: title })}
+                  hitSlop={10}
+                >
+                  <Text style={styles.removeText}>{t('chat.remove')}</Text>
+                </Tap>
+              ) : null}
+            </View>
+            {!saved && kinds.length > 1 ? (
+              <View style={styles.grades}>
+                {kinds.map((k) => (
+                  <Chip
+                    key={k.value}
+                    label={t(k.key)}
+                    active={p.kind === k.value}
+                    // Service and expense categories are different lists; a switch starts over.
+                    onPress={() => p.kind !== k.value && edit(i, { kind: k.value, category: null })}
+                  />
+                ))}
+              </View>
             ) : null}
-          </View>
-          {!saved ? (
-            <Segmented
-              options={[
-                { value: 'trip' as EntryKind, label: t('chat.seg.trip') },
-                { value: 'reading' as EntryKind, label: t('chat.seg.reading') },
-                { value: 'refuel' as EntryKind, label: t('chat.seg.refuel') },
-              ]}
-              value={p.kind}
-              onChange={(kind) => edit(i, { kind })}
-              dark
+            <ProposalFields
+              p={p}
+              locked={saved || p.op === 'delete'}
+              onEdit={(patch) => edit(i, patch)}
             />
-          ) : null}
-          <ProposalFields p={p} locked={saved} onEdit={(patch) => edit(i, patch)} />
-          {problems?.[i] ? <Text style={styles.problem}>{problems[i]}</Text> : null}
-        </View>
-      ))}
+            {problems?.[i] ? <Text style={styles.problem}>{problems[i]}</Text> : null}
+          </View>
+        );
+      })}
       {saved ? (
-        <Text style={styles.savedText}>
-          {proposals.length > 1 ? plural('chat.savedN', proposals.length) : t('chat.saved')}
-        </Text>
+        <Text style={styles.savedText}>{words.saved}</Text>
       ) : (
         <>
           <Button
-            label={
-              proposals.length > 1 ? plural('chat.approveN', proposals.length) : t('chat.approve')
-            }
+            label={words.approve}
+            variant={words.danger ? 'danger' : 'primary'}
             onPress={onApprove}
           />
-          <Text style={styles.cardFoot}>{t('chat.approveFoot')}</Text>
+          <Text style={styles.cardFoot}>{words.foot}</Text>
         </>
       )}
     </View>
   );
+}
+
+const blank = (v: unknown) => v === null || v === '' || (Array.isArray(v) && v.length === 0);
+
+/** One card value as text, for the old → new line. */
+function shown(k: keyof ProposalValues, v: ProposalValues[keyof ProposalValues], kind: EntryKind) {
+  if (blank(v)) return '—';
+  if (k === 'stops' && Array.isArray(v)) return v.join(' → ');
+  if (k === 'kind') return kindTitle(v as EntryKind);
+  if (k === 'grade') return gradeLabel(v as NonNullable<ProposalValues['grade']>);
+  if (k === 'category') {
+    return kind === 'service'
+      ? serviceLabel(v as ServiceCategory)
+      : expenseLabel(v as ExpenseCategory);
+  }
+  return String(v);
 }
 
 function ProposalFields({
@@ -583,6 +705,15 @@ function ProposalFields({
   locked: boolean;
   onEdit: (patch: Partial<Proposal>) => void;
 }) {
+  const changed = new Set(changedFields(p));
+  /** "20 → 30" under a field an edit card changes; nothing otherwise. */
+  const was = (k: keyof ProposalValues) =>
+    p.before && changed.has(k)
+      ? t('insights.change', {
+          old: shown(k, p.before[k], p.before.kind),
+          new: shown(k, p[k], p.kind),
+        })
+      : undefined;
   const range = (label: string) => (
     <NumberRow
       label={label}
@@ -590,17 +721,67 @@ function ProposalFields({
       value={p.rangeKm}
       max={MAX_RANGE_KM}
       locked={locked}
+      was={was('rangeKm')}
       onChange={(rangeKm) => onEdit({ rangeKm })}
     />
   );
+  const odometer = (
+    <NumberRow
+      label={t('kinds.field.odometer')}
+      unit={t('chat.unit.km')}
+      value={p.odometerKm}
+      max={MAX_ODOMETER_KM}
+      steps={[100, 1]}
+      whole
+      locked={locked}
+      was={was('odometerKm')}
+      onChange={(odometerKm) => onEdit({ odometerKm })}
+    />
+  );
+  const money = (label: string) => (
+    <NumberRow
+      label={label}
+      unit="AMD"
+      value={p.priceAmd}
+      max={MAX_PRICE_AMD}
+      steps={[1000, 100]}
+      whole
+      locked={locked}
+      was={was('priceAmd')}
+      onChange={(priceAmd) => onEdit({ priceAmd })}
+    />
+  );
+  const categories =
+    p.kind === 'service'
+      ? SERVICE_CATEGORIES.map((c) => ({ value: c, label: serviceLabel(c) }))
+      : EXPENSE_CATEGORIES.map((c) => ({ value: c, label: expenseLabel(c) }));
+  const categoryRow = (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.numLabel}>{t('kinds.field.category')}</Text>
+      <View style={styles.grades}>
+        {categories.map((c) => (
+          <Chip
+            key={c.value}
+            label={c.label}
+            active={p.category === c.value}
+            onPress={() => !locked && onEdit({ category: c.value })}
+          />
+        ))}
+      </View>
+      <Was text={was('category')} />
+    </View>
+  );
+
   return (
     <>
+      <Was text={was('kind')} />
       {p.kind === 'trip' ? (
         <>
           <TextRow
             label={t('chat.field.from')}
             value={p.from}
             locked={locked}
+            was={was('from')}
             onChange={(from) => onEdit({ from })}
           />
           {p.stops.length ? (
@@ -608,10 +789,12 @@ function ProposalFields({
               {t('chat.field.via', { stops: p.stops.join(' → ') })}
             </Text>
           ) : null}
+          <Was text={was('stops')} />
           <TextRow
             label={t('chat.field.to')}
             value={p.to}
             locked={locked}
+            was={was('to')}
             onChange={(to) => onEdit({ to })}
           />
           <NumberRow
@@ -620,13 +803,14 @@ function ProposalFields({
             value={p.distanceKm}
             max={MAX_TRIP_KM}
             locked={locked}
+            was={was('distanceKm')}
             onChange={(distanceKm) => onEdit({ distanceKm })}
           />
           {range(t('chat.field.rangeLeft'))}
         </>
       ) : p.kind === 'reading' ? (
         range(t('chat.field.rangeLeft'))
-      ) : (
+      ) : p.kind === 'refuel' ? (
         <>
           <NumberRow
             label={t('chat.field.liters')}
@@ -634,18 +818,10 @@ function ProposalFields({
             value={p.liters}
             max={MAX_LITERS}
             locked={locked}
+            was={was('liters')}
             onChange={(liters) => onEdit({ liters })}
           />
-          <NumberRow
-            label={t('chat.field.totalPaid')}
-            unit="AMD"
-            value={p.priceAmd}
-            max={MAX_PRICE_AMD}
-            steps={[1000, 100]}
-            whole
-            locked={locked}
-            onChange={(priceAmd) => onEdit({ priceAmd })}
-          />
+          {money(t('chat.field.totalPaid'))}
           {p.liters && p.priceAmd ? (
             <Text style={styles.cardNote}>
               {t('chat.field.perLiter', { price: formatAmd(p.priceAmd / p.liters) })}
@@ -656,12 +832,14 @@ function ProposalFields({
             label={t('chat.field.station')}
             value={p.station}
             locked={locked}
+            was={was('station')}
             onChange={(station) => onEdit({ station })}
           />
           <TextRow
             label={t('chat.field.address')}
             value={p.address}
             locked={locked}
+            was={was('address')}
             onChange={(address) => onEdit({ address })}
           />
           <View style={styles.grades}>
@@ -674,40 +852,157 @@ function ProposalFields({
               />
             ))}
           </View>
+          <Was text={was('grade')} />
+          {odometer}
+        </>
+      ) : p.kind === 'service' ? (
+        <>
+          {categoryRow}
+          {money(t('kinds.field.cost'))}
+          {odometer}
+          <TextRow
+            label={t('kinds.field.place')}
+            value={p.place}
+            locked={locked}
+            was={was('place')}
+            onChange={(place) => onEdit({ place })}
+          />
+          <NumberRow
+            label={t('kinds.field.remindKm')}
+            unit={t('chat.unit.km')}
+            value={p.remindKm}
+            max={MAX_REMIND_KM}
+            steps={[1000, 100]}
+            whole
+            locked={locked}
+            was={was('remindKm')}
+            onChange={(remindKm) => onEdit({ remindKm })}
+          />
+          <NumberRow
+            label={t('kinds.field.remindMonths')}
+            unit=""
+            value={p.remindMonths}
+            max={MAX_REMIND_MONTHS}
+            steps={[6, 1]}
+            whole
+            locked={locked}
+            was={was('remindMonths')}
+            onChange={(remindMonths) => onEdit({ remindMonths })}
+          />
+          {/* A service may carry a range (it is saved); shown only when there is one. */}
+          {p.rangeKm !== null ? range(t('chat.field.rangeLeft')) : null}
+        </>
+      ) : (
+        <>
+          {categoryRow}
+          {money(t('kinds.field.amount'))}
         </>
       )}
-      <ClockRow value={p.clock} locked={locked} onChange={(clock) => onEdit({ clock })} />
+      <DateRow
+        value={p.date}
+        locked={locked}
+        was={was('date')}
+        onChange={(date) => onEdit({ date })}
+      />
+      <ClockRow
+        value={p.clock}
+        locked={locked}
+        was={was('clock')}
+        onChange={(clock) => onEdit({ clock })}
+      />
+      <TextRow
+        label={t('insights.field.note')}
+        value={p.note}
+        locked={locked}
+        was={was('note')}
+        onChange={(note) => onEdit({ note })}
+      />
     </>
   );
+}
+
+/** The old → new line under a field an edit changes. */
+function Was({ text }: { text?: string }) {
+  return text ? <Text style={styles.was}>{text}</Text> : null;
 }
 
 function TextRow({
   label,
   value,
   locked,
+  was,
   onChange,
 }: {
   label: string;
   value: string;
   locked: boolean;
+  was?: string;
   onChange: (v: string) => void;
 }) {
   return (
-    <View style={styles.numRow}>
-      <Text style={styles.numLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        editable={!locked}
-        placeholder="—"
-        placeholderTextColor={colors.muted}
-        selectionColor={colors.accent}
-        cursorColor={colors.accent}
-        autoCapitalize="none"
-        autoCorrect={false}
-        accessibilityLabel={label}
-        style={styles.textInput}
-      />
+    <View style={styles.fieldBlock}>
+      <View style={styles.numRow}>
+        <Text style={styles.numLabel}>{label}</Text>
+        <TextInput
+          value={value}
+          onChangeText={onChange}
+          editable={!locked}
+          placeholder="—"
+          placeholderTextColor={colors.muted}
+          selectionColor={colors.accent}
+          cursorColor={colors.accent}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={label}
+          style={styles.textInput}
+        />
+      </View>
+      <Was text={was} />
+    </View>
+  );
+}
+
+/** A day as YYYY-MM-DD. A future day is marked here and refused by Approve. */
+function DateRow({
+  value,
+  locked,
+  was,
+  onChange,
+}: {
+  value: string | null;
+  locked: boolean;
+  was?: string;
+  onChange: (v: string | null) => void;
+}) {
+  const [raw, setRaw] = useState(value ?? '');
+  // Follow outside changes (a correction from the chat) without fighting the typing.
+  useEffect(() => {
+    if (parseDate(raw) !== value) setRaw(value ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const parsed = parseDate(raw);
+  const bad = raw.trim() !== '' && (parsed === null || parsed > dayKey(Date.now()));
+  return (
+    <View style={styles.fieldBlock}>
+      <View style={styles.numRow}>
+        <Text style={styles.numLabel}>{t('insights.field.date')}</Text>
+        <TextInput
+          value={raw}
+          onChangeText={(v) => {
+            setRaw(v);
+            if (v.trim() === '') onChange(null);
+            else if (parseDate(v)) onChange(parseDate(v));
+          }}
+          editable={!locked}
+          placeholder={t('insights.field.dateToday')}
+          placeholderTextColor={colors.muted}
+          keyboardType="numbers-and-punctuation"
+          selectionColor={colors.accent}
+          accessibilityLabel={t('insights.field.dateA11y')}
+          style={[styles.numInput, styles.dateInput, bad && styles.numInputBad]}
+        />
+      </View>
+      <Was text={was} />
     </View>
   );
 }
@@ -715,10 +1010,12 @@ function TextRow({
 function ClockRow({
   value,
   locked,
+  was,
   onChange,
 }: {
   value: string | null;
   locked: boolean;
+  was?: string;
   onChange: (v: string | null) => void;
 }) {
   const [raw, setRaw] = useState(value ?? '');
@@ -729,23 +1026,26 @@ function ClockRow({
   }, [value]);
   const bad = raw.trim() !== '' && parseClock(raw) === null;
   return (
-    <View style={styles.numRow}>
-      <Text style={styles.numLabel}>{t('chat.field.time')}</Text>
-      <TextInput
-        value={raw}
-        onChangeText={(v) => {
-          setRaw(v);
-          if (v.trim() === '') onChange(null);
-          else if (parseClock(v)) onChange(parseClock(v));
-        }}
-        editable={!locked}
-        placeholder={t('chat.field.timeNow')}
-        placeholderTextColor={colors.muted}
-        keyboardType="numbers-and-punctuation"
-        selectionColor={colors.accent}
-        accessibilityLabel={t('chat.field.timeA11y')}
-        style={[styles.numInput, styles.timeInput, bad && styles.numInputBad]}
-      />
+    <View style={styles.fieldBlock}>
+      <View style={styles.numRow}>
+        <Text style={styles.numLabel}>{t('chat.field.time')}</Text>
+        <TextInput
+          value={raw}
+          onChangeText={(v) => {
+            setRaw(v);
+            if (v.trim() === '') onChange(null);
+            else if (parseClock(v)) onChange(parseClock(v));
+          }}
+          editable={!locked}
+          placeholder={t('chat.field.timeNow')}
+          placeholderTextColor={colors.muted}
+          keyboardType="numbers-and-punctuation"
+          selectionColor={colors.accent}
+          accessibilityLabel={t('chat.field.timeA11y')}
+          style={[styles.numInput, styles.timeInput, bad && styles.numInputBad]}
+        />
+      </View>
+      <Was text={was} />
     </View>
   );
 }
@@ -758,6 +1058,7 @@ function NumberRow({
   steps = [1, 0.1],
   whole = false,
   locked,
+  was,
   onChange,
 }: {
   label: string;
@@ -768,6 +1069,7 @@ function NumberRow({
   steps?: [number, number];
   whole?: boolean;
   locked: boolean;
+  was?: string;
   onChange: (v: number | null) => void;
 }) {
   const [raw, setRaw] = useState(value === null ? '' : String(value));
@@ -826,6 +1128,7 @@ function NumberRow({
         {locked ? null : btn(steps[1])}
         {locked ? null : btn(steps[0])}
       </View>
+      <Was text={was} />
     </View>
   );
 }
@@ -1164,6 +1467,24 @@ const styles = StyleSheet.create({
   cardWarn: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '600' },
   cardNote: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontStyle: 'italic' },
   cardSaved: { borderColor: colors.border },
+  cardDanger: { borderColor: colors.danger },
+  fieldBlock: { gap: 4 },
+  was: { color: colors.accent, fontFamily: fonts.num, fontSize: 13, fontWeight: '600' },
+  suggestLabel: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: spacing.sm,
+  },
+  suggestions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
   prop: { gap: spacing.md },
   propDivider: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   removeText: { color: colors.danger, fontFamily: fonts.ui, fontSize: 13, fontWeight: '700' },
@@ -1238,6 +1559,15 @@ const styles = StyleSheet.create({
   timeInput: {
     flex: 0,
     width: 110,
+    height: TOUCH,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  dateInput: {
+    flex: 0,
+    width: 140,
     height: TOUCH,
     borderRadius: radius.sm,
     borderWidth: 1,

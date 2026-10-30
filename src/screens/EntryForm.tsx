@@ -2,12 +2,16 @@
  * Add / edit an entry: a full-screen sheet that slides up over the tabs.
  *
  * Layout is built for one hand in a parked car: the kind switch at the top
- * (Trip / Range from "+"; none on the fuel button's refuel-only form) with one
+ * (Trip / Range from "+"; none on the refuel, service and expense buttons'
+ * single-kind forms) with one
  * line saying what that kind is for, the fields the user actually
  * types in the middle (places first, because a trip is mostly "where to
  * where"), the time below them since it's usually "now" already, and Save
  * pinned at the bottom under the thumb, with one line above it saying what
  * is still missing.
+ *
+ * Service and expense categories are chips, not a dropdown: there are at most
+ * nine, they fit on screen, and picking one is a single tap.
  *
  * The form holds a lib `Draft` (raw strings) so half-typed "33," survives;
  * `validateDraft` is the only place that turns it into an Entry. Field errors
@@ -42,7 +46,7 @@ import { PlaceField } from '../components/PlaceField';
 import { RouteMap } from '../components/RouteMap';
 import { Dropdown } from '../components/Dropdown';
 import { AddressField, StationField } from '../components/StationField';
-import { Button, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
+import { Button, Chip, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
 import { WhenPicker } from '../components/WhenPicker';
 import {
   draftFromEntry,
@@ -52,6 +56,12 @@ import {
   validateDraft,
   type Draft,
 } from '../lib/draft';
+import {
+  EXPENSE_CATEGORIES,
+  expenseLabel,
+  SERVICE_CATEGORIES,
+  serviceLabel,
+} from '../lib/categories';
 import { currentRangeKm, rangeUsedById } from '../lib/entries';
 import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { trackDistanceKm } from '../lib/geo';
@@ -62,21 +72,34 @@ import { formatDelta } from '../components/format';
 import { t, type StringKey } from '../i18n';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
-import { colors, fonts, radius, spacing, TOUCH } from '../theme';
+import { colors, fonts, radius, spacing, TOUCH, type } from '../theme';
 import type { Entry, EntryKind } from '../types';
 
-const KINDS: EntryKind[] = ['trip', 'reading', 'refuel'];
+const KINDS: EntryKind[] = ['trip', 'reading', 'refuel', 'service', 'expense'];
 
 const KIND_LABEL: Record<EntryKind, StringKey> = {
   trip: 'form.kind.trip',
   reading: 'form.kind.reading',
   refuel: 'form.kind.refuel',
+  service: 'kinds.service',
+  expense: 'kinds.expense',
 };
 
 const KIND_HINT: Record<EntryKind, StringKey> = {
   trip: 'form.kindHint.trip',
   reading: 'form.kindHint.reading',
   refuel: 'form.kindHint.refuel',
+  service: 'form.kindHint.service',
+  expense: 'form.kindHint.expense',
+};
+
+/** [new, edit] titles. Trip and Range share one: the "+" form switches between them. */
+const TITLE: Record<EntryKind, [StringKey, StringKey]> = {
+  trip: ['form.title.new', 'form.title.edit'],
+  reading: ['form.title.new', 'form.title.edit'],
+  refuel: ['form.title.newRefuel', 'form.title.editRefuel'],
+  service: ['form.title.newService', 'form.title.editService'],
+  expense: ['form.title.newExpense', 'form.title.editExpense'],
 };
 
 /** Where a pre-filled value came from, shown next to its label. */
@@ -112,7 +135,7 @@ export function EntryForm({
     }
     return d;
   });
-  // Fixed at open: the fuel button's form is refuel-only, the "+" form is trip/range.
+  // Fixed at open: the refuel, service and expense forms are single-kind, the "+" form is trip/range.
   const [kindValues] = useState(() => KINDS.filter((k) => formKinds(draft.kind).includes(k)));
   // Labels at render time, so they follow the language.
   const kinds = kindValues.map((value) => ({ value, label: t(KIND_LABEL[value]) }));
@@ -124,7 +147,7 @@ export function EntryForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const result = useMemo(() => validateDraft(draft, id), [draft, id]);
   const errors = showErrors && !result.ok ? result.errors : {};
-  const hint = result.ok ? '' : saveHint(result.errors);
+  const hint = result.ok ? '' : saveHint(result.errors, draft.kind);
 
   // A hint, not a pre-fill: what the dashboard said last time, so the user
   // has a sanity check for the number they're about to type.
@@ -227,17 +250,7 @@ export function EntryForm({
           >
             <CloseIcon />
           </Tap>
-          <Text style={styles.title}>
-            {t(
-              draft.kind === 'refuel'
-                ? editing
-                  ? 'form.title.editRefuel'
-                  : 'form.title.newRefuel'
-                : editing
-                  ? 'form.title.edit'
-                  : 'form.title.new',
-            )}
-          </Text>
+          <Text style={styles.title}>{t(TITLE[draft.kind][editing ? 1 : 0])}</Text>
           <View style={styles.close} />
         </View>
 
@@ -408,6 +421,91 @@ export function EntryForm({
                 </Text>
               ) : null}
             </View>
+          ) : draft.kind === 'service' ? (
+            <>
+              <CategoryChips
+                options={SERVICE_CATEGORIES.map((c) => ({ value: c, label: serviceLabel(c) }))}
+                value={draft.category}
+                onChange={(c) => set('category', c)}
+                error={errors.category}
+              />
+              <View style={styles.pair}>
+                <View style={styles.flex}>
+                  <Field
+                    label={t('kinds.field.cost')}
+                    suffix="AMD"
+                    numeric
+                    keyboardType="number-pad"
+                    value={draft.price}
+                    onChangeText={(v) => set('price', v)}
+                    error={errors.price}
+                    placeholder="20000"
+                  />
+                </View>
+                <View style={styles.flex}>
+                  <Field
+                    label={t('kinds.field.odometer')}
+                    suffix={km}
+                    numeric
+                    keyboardType="number-pad"
+                    value={draft.odometer}
+                    onChangeText={(v) => set('odometer', v)}
+                    error={errors.odometer}
+                    placeholder={km}
+                  />
+                </View>
+              </View>
+              <Field
+                label={t('kinds.field.place')}
+                value={draft.place}
+                onChangeText={(v) => set('place', v)}
+              />
+              <View style={styles.pair}>
+                <View style={styles.flex}>
+                  <Field
+                    label={t('kinds.field.remindKm')}
+                    suffix={km}
+                    numeric
+                    keyboardType="number-pad"
+                    value={draft.remindKm}
+                    onChangeText={(v) => set('remindKm', v)}
+                    error={errors.remindKm}
+                    placeholder="10000"
+                  />
+                </View>
+                <View style={styles.flex}>
+                  <Field
+                    label={t('kinds.field.remindMonths')}
+                    suffix={t('form.unit.months')}
+                    numeric
+                    keyboardType="number-pad"
+                    value={draft.remindMonths}
+                    onChangeText={(v) => set('remindMonths', v)}
+                    error={errors.remindMonths}
+                    placeholder="12"
+                  />
+                </View>
+              </View>
+            </>
+          ) : draft.kind === 'expense' ? (
+            <>
+              <CategoryChips
+                options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: expenseLabel(c) }))}
+                value={draft.category}
+                onChange={(c) => set('category', c)}
+                error={errors.category}
+              />
+              <Field
+                label={t('kinds.field.amount')}
+                suffix="AMD"
+                numeric
+                keyboardType="number-pad"
+                value={draft.price}
+                onChangeText={(v) => set('price', v)}
+                error={errors.price}
+                placeholder="5000"
+              />
+            </>
           ) : (
             <>
               <View style={styles.pair}>
@@ -445,6 +543,16 @@ export function EntryForm({
                 onChangeText={(v) => set('range', v)}
                 error={errors.range}
                 marker={markers.range}
+                placeholder={km}
+              />
+              <Field
+                label={t('form.odometerOptional')}
+                suffix={km}
+                numeric
+                keyboardType="number-pad"
+                value={draft.odometer}
+                onChangeText={(v) => set('odometer', v)}
+                error={errors.odometer}
                 placeholder={km}
               />
               <StationField
@@ -537,6 +645,40 @@ export function EntryForm({
   );
 }
 
+/**
+ * One tap picks a category. A draft carries one `category` for both kinds, so
+ * a value from the other list (impossible from a single-kind form, but cheap
+ * to guard) simply shows nothing selected and validation asks again.
+ */
+function CategoryChips<T extends string>({
+  options,
+  value,
+  onChange,
+  error,
+}: {
+  options: { value: T; label: string }[];
+  value: string | undefined;
+  onChange: (v: T) => void;
+  error?: string;
+}) {
+  return (
+    <View style={styles.categories}>
+      <Text style={styles.categoryLabel}>{t('kinds.field.category')}</Text>
+      <View style={styles.chipRow} accessibilityRole="radiogroup">
+        {options.map((o) => (
+          <Chip
+            key={o.value}
+            label={o.label}
+            active={o.value === value}
+            onPress={() => onChange(o.value)}
+          />
+        ))}
+      </View>
+      {error ? <Text style={styles.categoryError}>{error}</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
   flex: { flex: 1 },
@@ -561,6 +703,10 @@ const styles = StyleSheet.create({
   kindHintAlone: { marginTop: 0 },
   content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
   pair: { flexDirection: 'row', gap: spacing.md },
+  categories: { gap: spacing.xs + 2 },
+  categoryLabel: { color: colors.muted, ...type.label },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  categoryError: { color: colors.danger, ...type.small },
   mapBlock: { gap: spacing.sm },
   muted: { color: colors.muted, fontFamily: fonts.num, fontSize: 13, fontWeight: '500' },
   estimate: {

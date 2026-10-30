@@ -1,13 +1,18 @@
 /**
  * The floating buttons, bottom-right under the thumb, left to right: AI chat,
- * refuel (the fuel pump) and "+" (trip / range).
+ * expense (wallet), service (wrench), refuel (the fuel pump) and "+" (trip /
+ * range).
  *
- * Refuels get their own button so logging one is a single tap straight into a
- * refuel-only form, and "+" stays about driving. The fuel button is the app
- * icon in miniature (amber pump on the dark disc) so it is recognisable
- * without a label.
+ * Each kind of spending gets its own button so logging one is a single tap
+ * straight into a form for just that kind, and "+" stays about driving. The
+ * fuel button is the app icon in miniature (amber pump on the dark disc) so it
+ * is recognisable without a label; wallet and wrench share that dark disc, so
+ * the three "money" buttons read as a set between the AI and "+".
  *
- * Same 64 dp circle for all so none reads as secondary. The AI one says
+ * Same circle for all so none reads as secondary. 56 dp, not the usual 64:
+ * five of them plus gaps and the edge margin have to fit across a 360 dp
+ * phone (5 × 56 + 4 × 10 + 16 = 336), and 56 is still above the 48 dp touch
+ * minimum. The AI one says
  * "this is the new, smart thing" with motion rather than words: a soft amber
  * halo that breathes and a slow sparkle twinkle. Motion runs on the native
  * driver (opacity/scale only) so it costs nothing while the list scrolls, and
@@ -19,17 +24,21 @@ import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-nat
 
 import { t } from '../i18n';
 import { colors, spacing } from '../theme';
-import { FuelPumpIcon, PlusIcon, SparklesIcon } from './icons';
+import { FuelPumpIcon, PlusIcon, SparklesIcon, WalletIcon, WrenchIcon } from './icons';
 import { Tap } from './ui';
 
-const SIZE = 64;
+const SIZE = 56;
 
 export function Fabs({
   onAi,
+  onExpense,
+  onService,
   onRefuel,
   onAdd,
 }: {
   onAi: () => void;
+  onExpense: () => void;
+  onService: () => void;
   onRefuel: () => void;
   onAdd: () => void;
 }) {
@@ -37,12 +46,28 @@ export function Fabs({
     <View style={styles.row} pointerEvents="box-none">
       <AiFab onPress={onAi} />
       <Tap
+        onPress={onExpense}
+        accessibilityRole="button"
+        accessibilityLabel={t('components.fab.expense')}
+        style={[styles.fab, styles.dark]}
+      >
+        <WalletIcon size={26} color={colors.accent} width={2} />
+      </Tap>
+      <Tap
+        onPress={onService}
+        accessibilityRole="button"
+        accessibilityLabel={t('components.fab.service')}
+        style={[styles.fab, styles.dark]}
+      >
+        <WrenchIcon size={24} color={colors.accent} width={2} />
+      </Tap>
+      <Tap
         onPress={onRefuel}
         accessibilityRole="button"
         accessibilityLabel={t('components.fab.refuel')}
-        style={[styles.fab, styles.fuel]}
+        style={[styles.fab, styles.dark]}
       >
-        <FuelPumpIcon />
+        <FuelPumpIcon size={26} />
       </Tap>
       <Tap
         onPress={onAdd}
@@ -50,7 +75,7 @@ export function Fabs({
         accessibilityLabel={t('components.fab.add')}
         style={styles.fab}
       >
-        <PlusIcon />
+        <PlusIcon size={24} />
       </Tap>
     </View>
   );
@@ -131,7 +156,7 @@ function AiFab({ onPress }: { onPress: () => void }) {
         style={[styles.fab, styles.ai]}
       >
         <Animated.View style={sparkle}>
-          <SparklesIcon />
+          <SparklesIcon size={24} />
         </Animated.View>
       </Tap>
     </View>
@@ -144,7 +169,7 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     bottom: spacing.lg,
     flexDirection: 'row',
-    gap: spacing.lg,
+    gap: 10,
     alignItems: 'center',
   },
   fab: {
@@ -156,7 +181,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 6,
   },
-  fuel: { backgroundColor: colors.bg, borderWidth: 2, borderColor: colors.accent },
+  dark: { backgroundColor: colors.bg, borderWidth: 2, borderColor: colors.accent },
   aiWrap: { width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' },
   // The AI button is the amber disc with a warm outer ring, so it glows rather than shouts.
   ai: { backgroundColor: '#FFC24D', borderWidth: 2, borderColor: colors.accent },
@@ -169,9 +194,9 @@ const styles = StyleSheet.create({
   },
   halo2: {
     position: 'absolute',
-    width: SIZE + 22,
-    height: SIZE + 22,
-    borderRadius: (SIZE + 22) / 2,
+    width: SIZE + 18,
+    height: SIZE + 18,
+    borderRadius: (SIZE + 18) / 2,
     borderWidth: 1.5,
     borderColor: 'rgba(245,165,36,0.45)',
   },

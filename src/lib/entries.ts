@@ -17,6 +17,10 @@
  *  - A negative drop. The dashboard re-estimates from recent consumption and can
  *    tick UP after a gentle stretch; that is not "negative fuel used".
  *
+ * Services and expenses are money, not driving: even one that somehow carries
+ * a range (an import, the chat) is passed over as if it were not in the log,
+ * so it can neither start nor break a measurement.
+ *
  * ── DAYS ARE LOCAL ───────────────────────────────────────────────────────
  *
  * A drive at 23:40 belongs to the evening the user lived, so day keys, labels and
@@ -28,7 +32,7 @@
  */
 
 import { t, type StringKey } from '../i18n';
-import type { Entry, TripEntry } from '../types';
+import type { Entry, ExpenseEntry, ServiceEntry } from '../types';
 
 import { formatAmd, formatKm } from './numbers';
 
@@ -45,6 +49,19 @@ function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** Service or expense: spending that has nothing to do with fuel or range. */
+export function isCost(entry: Entry): entry is ServiceEntry | ExpenseEntry {
+  return entry.kind === 'service' || entry.kind === 'expense';
+}
+
+/** What an entry cost, AMD: a refuel's price, a service's cost, an expense's amount. */
+export function entryAmd(entry: Entry): number | undefined {
+  if (entry.kind === 'refuel') return entry.priceAmd;
+  if (entry.kind === 'service') return entry.costAmd;
+  if (entry.kind === 'expense') return entry.amountAmd;
+  return undefined;
+}
+
 /** Entry id → km of range used since the previous reading. Only meaningful drops appear. */
 export function rangeUsedById(entries: Entry[]): Map<string, number> {
   const used = new Map<string, number>();
@@ -52,6 +69,7 @@ export function rangeUsedById(entries: Entry[]): Map<string, number> {
   let refuelSinceBaseline = false;
 
   for (const entry of sortOldestFirst(entries)) {
+    if (isCost(entry)) continue;
     if (entry.rangeKm === undefined) {
       if (entry.kind === 'refuel') refuelSinceBaseline = true;
       continue;
@@ -69,15 +87,7 @@ export function rangeUsedById(entries: Entry[]): Map<string, number> {
 
 /** What the dashboard said most recently, if anything ever recorded it. */
 export function currentRangeKm(entries: Entry[]): number | undefined {
-  return sortNewestFirst(entries).find((e) => e.rangeKm !== undefined)?.rangeKm;
-}
-
-/** "4micro → Charents school". Empty parts are skipped so a half-filled trip still reads. */
-export function routeLabel(trip: TripEntry): string {
-  return [trip.from, ...trip.stops, trip.to]
-    .map((part) => part.trim())
-    .filter((part) => part !== '')
-    .join(' → ');
+  return sortNewestFirst(entries).find((e) => !isCost(e) && e.rangeKm !== undefined)?.rangeKm;
 }
 
 function pad(n: number): string {
@@ -137,6 +147,11 @@ export function groupByDay(entries: Entry[], now: number): DayGroup[] {
   return groups;
 }
 
+/**
+ * `spentAmd` stays what it always was, money paid at refuels, because the
+ * average AMD/L and the chat read it as fuel money. Everything else the car
+ * cost is `otherAmd` (services + expenses), so the total is the sum of the two.
+ */
 export type Summary = {
   trips: number;
   distanceKm: number;
@@ -144,6 +159,9 @@ export type Summary = {
   refuels: number;
   liters: number;
   spentAmd: number;
+  services: number;
+  expenses: number;
+  otherAmd: number;
 };
 
 /** Totals for `fromMs <= at < toMs`. */
@@ -158,6 +176,9 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
     refuels: 0,
     liters: 0,
     spentAmd: 0,
+    services: 0,
+    expenses: 0,
+    otherAmd: 0,
   };
   for (const entry of entries) {
     if (entry.at < fromMs || entry.at >= toMs) continue;
@@ -169,6 +190,12 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
       summary.refuels += 1;
       summary.liters += entry.liters;
       summary.spentAmd += entry.priceAmd;
+    } else if (entry.kind === 'service') {
+      summary.services += 1;
+      summary.otherAmd += entry.costAmd;
+    } else if (entry.kind === 'expense') {
+      summary.expenses += 1;
+      summary.otherAmd += entry.amountAmd;
     }
   }
   return summary;

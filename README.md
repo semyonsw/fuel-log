@@ -10,7 +10,7 @@ replaces a running note in Samsung Notes with something that does the arithmetic
 - **Range readings.** Record the dashboard's "km remaining" at the start and end
   of a trip, or whenever you glance at it.
 - **Range used per trip,** computed automatically from the readings around it.
-- **Refuels** with liters and price in AMD.
+- **Refuels** with liters, price in AMD and, optionally, the odometer.
 - **Remembered places,** so frequent stops are one tap instead of retyped.
 - **Today, weekly, monthly, all-time and custom-range summary** of trips, range
   used, liters and money spent, with spending per day, plus the approximate
@@ -23,10 +23,21 @@ replaces a running note in Samsung Notes with something that does the arithmetic
 - **GPS trips:** start/stop recording from the Log (keeps going with the screen
   off), route on a map (MapLibre + OpenFreeMap, no key), distance from the track,
   From/To guessed from earlier trips, approximate fuel cost per trip.
+- **Service log** (oil, repairs, tires, inspection) with reminders by date or by
+  km, whichever comes first; refuels can record the odometer so km reminders
+  follow real driving.
+- **Other expenses** by category: insurance, fines, taxes, parking, wash, tolls,
+  parts, accessories.
+- **Two monthly budgets,** fuel and everything else, with a month-end forecast.
+- **Charts and stats:** spending over time, plus per-station and per-grade figures.
+- **App-icon shortcuts:** long-press the icon to jump straight into a new entry.
 - **AI chat (Gemini):** say what happened ("bought 15 L for 9000 AMD, fuel was
   15 km, now 250 km") or photograph the dashboard; the entries it implies appear
-  as editable cards and one Approve saves them to the log. Ask about your log too.
-  Several chats, with history; choice of current Gemini models.
+  as editable cards and one Approve saves them to the log. It can add, edit or
+  delete any kind of entry, always as cards you approve; it knows today's date
+  and the log's exact totals, logs past dates ("yesterday I filled up…"), and
+  can check the log for anomalies. Several chats, with history; choice of
+  current Gemini models.
 - **Backup:** export/import one JSON file; auto-backup after every change into a
   folder you pick once (the newest file replaces the old one).
 

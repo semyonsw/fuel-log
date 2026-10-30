@@ -33,6 +33,7 @@ cp android/app/build/outputs/apk/release/app-release.apk "$APK"
 BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
 "$BT/apksigner" verify --print-certs "$APK" | grep -q "CN=Android Debug" \
   || { echo "ERROR: $APK is not signed with the Android Debug key; it would not update the phone." >&2; exit 1; }
-"$BT/aapt2" dump badging "$APK" | head -1
+# sed, not head: head exits early and SIGPIPEs aapt2, which fails the script under pipefail.
+"$BT/aapt2" dump badging "$APK" | sed -n 1p
 echo
 echo "Done: $(pwd)/$APK"

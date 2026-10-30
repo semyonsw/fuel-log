@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildRequest, interpret, listModels, mergeTurns, sendChat, type Fetch } from './gemini';
+import { chatContext } from './assistant';
+import { at, refuel } from './entries.fixtures';
+import {
+  buildRequest,
+  errorText,
+  interpret,
+  listModels,
+  mergeTurns,
+  sendChat,
+  type Fetch,
+} from './gemini';
 
 /** Every test runs against a fake fetch: no request ever leaves the machine. */
 
@@ -10,16 +20,17 @@ const okBody = (text: string) =>
 const respond = (status: number, body: string): Fetch =>
   vi.fn(async () => new Response(body, { status }));
 
-const base = { apiKey: 'k', model: 'gemini-3.5-flash-lite', logJson: '[]', turns: [] };
+const context = { now: at(29, 14, 5), logJson: '[]', factsJson: '{}' };
+const base = { apiKey: 'k', model: 'gemini-3.5-flash-lite', context, turns: [] };
 
 describe('buildRequest', () => {
   it('puts the log in the system instruction and the photo as inline JPEG', () => {
     const req = buildRequest(
       [
         { role: 'user', text: 'read this', imageBase64: 'AAAA' },
-        { role: 'model', text: '{"reply":"ok","entries":[]}' },
+        { role: 'model', text: '{"reply":"ok","changes":[]}' },
       ],
-      '[{"kind":"reading"}]',
+      { ...context, logJson: '[{"kind":"reading"}]' },
     );
     expect(req.systemInstruction.parts[0].text).toContain('[{"kind":"reading"}]');
     expect(req.systemInstruction.parts[0].text).toContain('the car');
@@ -30,6 +41,20 @@ describe('buildRequest', () => {
     expect(req.contents[1].role).toBe('model');
     expect(req.generationConfig.responseMimeType).toBe('application/json');
   });
+
+  it("includes today's date and the app's facts", () => {
+    const ctx = chatContext([refuel('f', at(28, 9, 0), 20, 10000)], at(29, 14, 5));
+    const text = buildRequest([], ctx).systemInstruction.parts[0].text;
+    expect(text).toContain('2026-10-29 (Thursday) 14:05');
+    expect(text).toContain('"fuelAmd":10000');
+    expect(text).toContain('"ref":"e1"');
+  });
+});
+
+describe('errorText', () => {
+  it('is one plain sentence per failure', () => {
+    expect(errorText('quota')).toMatch(/quota/i);
+  });
 });
 
 describe('sendChat', () => {
@@ -37,7 +62,7 @@ describe('sendChat', () => {
     const f = respond(
       200,
       okBody(
-        '{"reply":"Range 54 km","entries":[{"kind":"reading","rangeKm":54}],"confidence":"high"}',
+        '{"reply":"Range 54 km","changes":[{"op":"add","kind":"reading","rangeKm":54}],"confidence":"high"}',
       ),
     );
     const r = await sendChat({ ...base, fetch: f });
@@ -45,7 +70,7 @@ describe('sendChat', () => {
       ok: true,
       reply: {
         reply: 'Range 54 km',
-        entries: [{ kind: 'reading', rangeKm: 54 }],
+        changes: [{ op: 'add', kind: 'reading', rangeKm: 54 }],
         confidence: 'high',
       },
     });

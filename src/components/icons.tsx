@@ -34,6 +34,24 @@ export function DropIcon({ color = colors.accent }: { color?: string }) {
 
 type IconProps = { color?: string; size?: number };
 
+/** A wrench in the round row badge. Marks a service. */
+export function ServiceBadge({ color = colors.accent }: { color?: string }) {
+  return (
+    <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
+      <WrenchIcon size={18} color={color} width={2} />
+    </View>
+  );
+}
+
+/** A wallet in the round row badge. Marks any other expense. */
+export function ExpenseBadge({ color = colors.muted }: { color?: string }) {
+  return (
+    <View style={styles.badge}>
+      <WalletIcon size={18} color={color} width={2} />
+    </View>
+  );
+}
+
 function Line({
   size = 24,
   color = colors.text,
@@ -142,6 +160,28 @@ export function FuelPumpIcon({
       />
       <Rect x="18.75" y="4" width="2.75" height="4.4" rx="0.5" fill={color} />
     </Svg>
+  );
+}
+
+type StrokeProps = IconProps & { width?: number };
+
+/** A spanner, the universal "car service" sign. */
+export function WrenchIcon({ size = 24, color = colors.text, width }: StrokeProps) {
+  return (
+    <Line size={size} color={color} width={width}>
+      <Path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </Line>
+  );
+}
+
+/** A wallet with its clasp: money spent on the car that is not fuel. */
+export function WalletIcon({ size = 24, color = colors.text, width }: StrokeProps) {
+  return (
+    <Line size={size} color={color} width={width}>
+      <Rect x="3" y="6.5" width="18" height="13" rx="2" />
+      <Path d="M5.5 6.5l10-3a1 1 0 0 1 1.3 1v2" />
+      <Path d="M21 11h-3.5a1.75 1.75 0 0 0 0 3.5H21" />
+    </Line>
   );
 }
 

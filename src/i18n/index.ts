@@ -31,10 +31,6 @@ export function setLang(lang: Lang): void {
   current = lang;
 }
 
-export function getLang(): Lang {
-  return current;
-}
-
 /** The string for `key` in the current language, with `{name}` filled from `vars`. */
 export function t(key: StringKey, vars?: Record<string, string | number>): string {
   const raw = STRINGS[current][key] ?? STRINGS.en[key];

@@ -51,13 +51,18 @@ async function readBuffer(): Promise<RawFix[]> {
 }
 
 // Appends are serialised so two batches arriving together cannot overwrite each other.
-let writing: Promise<unknown> = Promise.resolve();
+// The chain never rejects: one failed write (storage full) loses that batch, but
+// a rejected link would make every later append skip, ending the recording
+// silently, and would make stopTracking throw with the Stop button stuck busy.
+let writing: Promise<void> = Promise.resolve();
 function append(fixes: RawFix[]) {
-  writing = writing.then(async () => {
-    const all = [...(await readBuffer()), ...fixes];
-    await AsyncStorage.setItem(BUFFER_KEY, JSON.stringify(all));
-    useTracking.setState({ points: filterJitter(all) });
-  });
+  writing = writing
+    .then(async () => {
+      const all = [...(await readBuffer()), ...fixes];
+      await AsyncStorage.setItem(BUFFER_KEY, JSON.stringify(all));
+      useTracking.setState({ points: filterJitter(all) });
+    })
+    .catch(() => {});
   return writing;
 }
 
@@ -81,10 +86,10 @@ export async function restoreTracking(): Promise<void> {
   try {
     // Even if the service died (phone restart), what was recorded is kept and
     // the card shows, so the user can stop and save it.
-    const started = await AsyncStorage.getItem(STARTED_KEY);
-    if (started) {
+    const started = Number(await AsyncStorage.getItem(STARTED_KEY));
+    if (Number.isFinite(started) && started > 0) {
       useTracking.setState({
-        startedAt: Number(started),
+        startedAt: started,
         points: filterJitter(await readBuffer()),
       });
     }
@@ -120,6 +125,9 @@ export async function startTracking(): Promise<StartResult> {
     useTracking.setState({ startedAt: now, points: [] });
     return 'started';
   } catch {
+    // The start marker may already be written; left behind, the next launch
+    // would restore a recording that never began.
+    await AsyncStorage.multiRemove([BUFFER_KEY, STARTED_KEY]).catch(() => {});
     return 'failed';
   }
 }

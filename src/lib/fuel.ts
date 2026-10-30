@@ -26,7 +26,7 @@
 
 import { t } from '../i18n';
 import type { Entry, RefuelEntry, TripEntry } from '../types';
-import { rangeUsedById } from './entries';
+import { isCost, rangeUsedById } from './entries';
 import { parseNumber } from './numbers';
 
 function sortedAsc(entries: Entry[]): Entry[] {
@@ -44,14 +44,17 @@ export function latestPricePerLiter(entries: Entry[], atOrBefore = Infinity): nu
   return last ? last.priceAmd / last.liters : undefined;
 }
 
+export type KmPerLiterPoint = { id: string; at: number; kmPerL: number };
+
 /**
- * km of dashboard range per litre, averaged over refuels that recorded range
- * after AND have a range reading before them. A refuel the range did not rise
- * across tells nothing and is skipped. Undefined when no refuel qualifies.
+ * One km/L figure per refuel that recorded range after AND has a range
+ * reading before it (the jump across the fill-up ÷ litres), oldest first. A
+ * refuel the range did not rise across tells nothing and is skipped. Services
+ * and expenses never count as the reading before: they are not about range.
  */
-export function kmPerLiterFromRefuels(entries: Entry[]): number | undefined {
-  const asc = sortedAsc(entries);
-  const gains: number[] = [];
+export function kmPerLiterPoints(entries: Entry[]): KmPerLiterPoint[] {
+  const asc = sortedAsc(entries).filter((e) => !isCost(e));
+  const points: KmPerLiterPoint[] = [];
   asc.forEach((e, i) => {
     if (e.kind !== 'refuel' || e.liters <= 0 || e.rangeKm === undefined) return;
     let before: number | undefined;
@@ -64,9 +67,18 @@ export function kmPerLiterFromRefuels(entries: Entry[]): number | undefined {
     }
     if (before === undefined) return;
     const gained = e.rangeKm - before;
-    if (gained > 0) gains.push(gained / e.liters);
+    if (gained > 0) points.push({ id: e.id, at: e.at, kmPerL: gained / e.liters });
   });
-  return gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : undefined;
+  return points;
+}
+
+/**
+ * km of dashboard range per litre: the plain average of `kmPerLiterPoints`.
+ * Undefined when no refuel qualifies.
+ */
+export function kmPerLiterFromRefuels(entries: Entry[]): number | undefined {
+  const points = kmPerLiterPoints(entries);
+  return points.length ? points.reduce((a, p) => a + p.kmPerL, 0) / points.length : undefined;
 }
 
 /** Typed L/100 km wins; otherwise the log's figure. Returns km per litre. */

@@ -57,10 +57,17 @@ export function WhenPicker({ at, onChange }: { at: number; onChange: (at: number
         <Chip label={t('components.when.now')} onPress={() => onChange(Date.now())} />
         <Chip label={t('components.when.minus15')} onPress={() => onChange(at - 15 * MIN)} />
         <Chip label={t('components.when.minusHour')} onPress={() => onChange(at - HOUR)} />
-        <Chip label={t('common.yesterday')} onPress={() => onChange(at - 24 * HOUR)} />
+        <Chip label={t('common.yesterday')} onPress={() => onChange(sameTimeYesterday(at))} />
       </View>
     </View>
   );
+}
+
+/** The same wall-clock time a calendar day earlier; minus 24 h is an hour off across DST. */
+function sameTimeYesterday(at: number): number {
+  const d = new Date(at);
+  d.setDate(d.getDate() - 1);
+  return d.getTime();
 }
 
 /** Opens the calendar on the entry's day; keeps its hour and minute. */

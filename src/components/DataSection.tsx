@@ -25,6 +25,8 @@ export function DataSection() {
   const [busy, setBusy] = useState(false);
 
   const exportNow = async () => {
+    // A second press while saving would open a second folder picker.
+    if (busy) return;
     setBusy(true);
     const ok = dir ? await backupNow() : await chooseBackupFolder();
     setBusy(false);

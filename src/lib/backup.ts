@@ -4,7 +4,8 @@
  * ── WHAT IS IN IT ────────────────────────────────────────────────────────
  *
  * Entries, AI chats (text only — photos are never kept), the calculator's
- * remembered consumption, the chosen model, and the Gemini API key. The key
+ * remembered consumption, the two monthly budgets, the chosen model, and the
+ * Gemini API key. The key
  * is in plain text because the user asked for a backup that restores a fresh
  * install completely; whoever has the file can use the key.
  *
@@ -31,7 +32,17 @@ import { sanitizeEntries } from './sanitize';
 export const BACKUP_APP = 'fuel-log';
 export const BACKUP_FORMAT = 1;
 
-export type BackupSettings = { consumption: string; geminiModel: string };
+export type BackupSettings = {
+  consumption: string;
+  geminiModel: string;
+  /**
+   * Optional because files written before budgets existed have none, and
+   * "not in the file" must not read as "blank": importing such a file keeps
+   * the budgets the phone has, even in Replace mode.
+   */
+  fuelBudget?: string;
+  expenseBudget?: string;
+};
 
 export type Backup = {
   app: typeof BACKUP_APP;
@@ -98,9 +109,32 @@ export function parseBackup(text: string): ParsedBackup {
       settings: {
         consumption: typeof s.consumption === 'string' ? s.consumption : '',
         geminiModel: typeof s.geminiModel === 'string' ? s.geminiModel : '',
+        ...(typeof s.fuelBudget === 'string' ? { fuelBudget: s.fuelBudget } : {}),
+        ...(typeof s.expenseBudget === 'string' ? { expenseBudget: s.expenseBudget } : {}),
       },
       geminiApiKey: typeof o.geminiApiKey === 'string' ? o.geminiApiKey : '',
     },
+  };
+}
+
+/**
+ * The settings after an import. The file fills in what this phone does not
+ * have; in Replace mode the file wins outright. A budget the file does not
+ * carry at all (an export from before budgets) leaves the phone's alone in
+ * either mode.
+ */
+export function importedSettings(
+  phone: Required<BackupSettings>,
+  file: BackupSettings,
+  mode: 'merge' | 'replace',
+): Required<BackupSettings> {
+  const pick = (mine: string, theirs: string | undefined) =>
+    theirs === undefined ? mine : mode === 'replace' || !mine ? theirs : mine;
+  return {
+    consumption: pick(phone.consumption, file.consumption),
+    geminiModel: pick(phone.geminiModel, file.geminiModel),
+    fuelBudget: pick(phone.fuelBudget, file.fuelBudget),
+    expenseBudget: pick(phone.expenseBudget, file.expenseBudget),
   };
 }
 

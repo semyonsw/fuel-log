@@ -23,10 +23,19 @@
  * them afresh; nothing has to subscribe to the language itself. Auto-backup starts
  * only after everything has loaded, so a half-read store is never written out.
  *
+ * App-icon shortcuts (long-press the launcher icon) are published once the
+ * app is ready and again on every language switch, so their titles follow the
+ * setting. The one that launched the app, or arrives while it runs, is held
+ * until the stores are loaded and is then routed by `lib/shortcuts`; before
+ * onboarding it is dropped, since the welcome screen comes first. Chat and
+ * Start trip close an open form, because the form would otherwise sit on top
+ * of what was asked for.
+ *
  * `services/tracking` is imported for its side effect: the background GPS
  * task must be defined before anything mounts.
  */
 
+import * as QuickActions from 'expo-quick-actions';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -38,20 +47,22 @@ import { LogTabIcon, SettingsTabIcon, SummaryTabIcon } from './src/components/ic
 import { Tap } from './src/components/ui';
 import { setLang, t, type StringKey } from './src/i18n';
 import { emptyDraft, type Draft } from './src/lib/draft';
+import { shortcutItems, shortcutRoute } from './src/lib/shortcuts';
 import { nextLabelsShown, type TabLabelEvent } from './src/lib/tabLabels';
 import { startAutoBackup } from './src/services/backup';
+import { startReminders } from './src/services/notifications';
 import { loadApiKey } from './src/services/secrets';
 import { restoreTracking } from './src/services/tracking';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { EntryForm, type FormMarkers } from './src/screens/EntryForm';
-import { LogScreen } from './src/screens/LogScreen';
+import { LogScreen, startTrip } from './src/screens/LogScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SummaryScreen } from './src/screens/SummaryScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { useSettings } from './src/state/settings';
 import { useLog } from './src/state/store';
 import { colors, fonts, spacing } from './src/theme';
-import type { Entry } from './src/types';
+import type { Entry, EntryKind } from './src/types';
 
 type Tab = 'history' | 'summary' | 'settings';
 /** null = closed; `editing` = an existing entry; `initial` = a pre-filled new one. */
@@ -84,6 +95,8 @@ function Shell() {
   const [form, setForm] = useState<FormState>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [labelsShown, setLabelsShown] = useState(false);
+  // The id of a shortcut not yet acted on: the launch one, or a later one.
+  const [shortcut, setShortcut] = useState<string | null>(() => QuickActions.initial?.id ?? null);
   const barTouch = useRef(false);
   const ready = logReady && settingsReady && extrasReady;
 
@@ -91,13 +104,19 @@ function Shell() {
     Promise.all([loadApiKey(), restoreTracking()]).finally(() => setExtrasReady(true));
   }, []);
   useEffect(() => (ready ? startAutoBackup() : undefined), [ready]);
+  // After onboarding, so its permission prompt never lands on the welcome screen.
+  useEffect(() => (ready && onboarded ? startReminders() : undefined), [ready, onboarded]);
 
   const openNew = useCallback(() => setForm({ key: `new-${Date.now()}` }), []);
   const openEdit = useCallback((entry: Entry) => setForm({ editing: entry, key: entry.id }), []);
-  const openRefuel = useCallback(
-    () => setForm({ initial: emptyDraft('refuel', Date.now()), key: `refuel-${Date.now()}` }),
+  const openKind = useCallback(
+    (kind: EntryKind) =>
+      setForm({ initial: emptyDraft(kind, Date.now()), key: `${kind}-${Date.now()}` }),
     [],
   );
+  const openRefuel = useCallback(() => openKind('refuel'), [openKind]);
+  const openService = useCallback(() => openKind('service'), [openKind]);
+  const openExpense = useCallback(() => openKind('expense'), [openKind]);
   const openRecorded = useCallback(
     (draft: Draft, m: { from?: boolean; to?: boolean; distance?: boolean }) => {
       const mark = t('app.fromGps');
@@ -131,6 +150,36 @@ function Shell() {
   }, [labelEvent]);
 
   useEffect(() => {
+    const sub = QuickActions.addListener((action) => setShortcut(action.id));
+    return () => sub.remove();
+  }, []);
+  // `language` is a dependency on purpose: titles are read with t() here.
+  useEffect(() => {
+    if (!ready) return;
+    // ic_launcher is the app icon mipmap prebuild generates; a missing one just means no icon.
+    QuickActions.setItems(shortcutItems().map((i) => ({ ...i, icon: 'ic_launcher' }))).catch(
+      () => {},
+    );
+  }, [ready, language]);
+  useEffect(() => {
+    if (!ready || shortcut === null) return;
+    setShortcut(null);
+    const route = onboarded ? shortcutRoute(shortcut) : null;
+    if (!route) return;
+    if (route.to === 'form') {
+      openKind(route.kind);
+    } else if (route.to === 'chat') {
+      setForm(null);
+      setChatOpen(true);
+    } else {
+      setForm(null);
+      setChatOpen(false);
+      setTab('history');
+      startTrip().catch(() => {});
+    }
+  }, [ready, onboarded, shortcut, openKind]);
+
+  useEffect(() => {
     if (form || chatOpen || tab === 'history') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       setTab('history');
@@ -161,6 +210,8 @@ function Shell() {
           <LogScreen
             onAdd={openNew}
             onAddRefuel={openRefuel}
+            onAddService={openService}
+            onAddExpense={openExpense}
             onEdit={openEdit}
             onAi={openChat}
             onTripRecorded={openRecorded}

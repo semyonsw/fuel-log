@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { at, reading, realNotes, trip } from '../lib/entries.fixtures';
-import { STORAGE_KEY, sanitizeEntries, useLog } from './store';
+import { sanitizeEntries } from '../lib/sanitize';
+import { STORAGE_KEY, useLog } from './store';
 
 /**
  * The log store, run for real against the in-memory AsyncStorage stub: the three

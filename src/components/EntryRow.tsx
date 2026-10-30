@@ -1,5 +1,6 @@
 /**
- * One timeline row, in one of three shapes: trip, range reading, refuel.
+ * One timeline row, in one of five shapes: trip, range reading, refuel,
+ * service, expense.
  *
  * Each mirrors a line of the Samsung Notes log it replaces, so the user can
  * scan it the same way: time on the left, then what happened, then the range
@@ -12,6 +13,10 @@
  * scrolling a month back. A tracked trip shows its route as a small drawn
  * line (no map tiles in a list) with how long the drive took in its emptiest
  * corner, and every trip with enough data shows its approximate fuel cost.
+ *
+ * Service and expense rows follow the refuel row's shape (badge, then "what ·
+ * how much", then the details) but without the amber wash: that stays the
+ * mark of a fill-up, the thing the range card's arithmetic restarts at.
  */
 
 import { memo } from 'react';
@@ -20,13 +25,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import { t } from '../i18n';
 import type { Entry } from '../types';
 import { trackDurationMs } from '../lib/duration';
+import { expenseLabel, serviceLabel } from '../lib/categories';
 import { formatTime } from '../lib/entries';
 import type { FuelResult } from '../lib/fuel';
 import { formatAmd, formatKm, formatLiters } from '../lib/numbers';
 import { stationLine } from '../lib/stations';
 import { colors, fonts, radius, spacing } from '../theme';
 import { formatDelta } from './format';
-import { ChevronIcon, DropIcon, GaugeIcon } from './icons';
+import { ChevronIcon, DropIcon, ExpenseBadge, GaugeIcon, ServiceBadge } from './icons';
 import { RouteLine } from './RouteLine';
 import { TrackPreview } from './TrackPreview';
 import { Tap } from './ui';
@@ -92,6 +98,34 @@ export const EntryRow = memo(function EntryRow({ entry, rangeUsed, estimate, onP
             <GaugeIcon />
             <Text style={styles.primary}>{t('app.row.left', { km: formatKm(entry.rangeKm) })}</Text>
             <Delta used={rangeUsed} />
+          </View>
+        ) : entry.kind === 'service' ? (
+          <>
+            <View style={styles.inline}>
+              <ServiceBadge />
+              <Text style={styles.primary}>
+                {serviceLabel(entry.category)} · {formatAmd(entry.costAmd)}
+              </Text>
+            </View>
+            {entry.odometerKm !== undefined ? (
+              <View style={styles.chips}>
+                <Text style={styles.meta}>
+                  {t('kinds.field.odometer')} {formatKm(entry.odometerKm)}
+                </Text>
+              </View>
+            ) : null}
+            {entry.place ? (
+              <Text style={styles.station} numberOfLines={2}>
+                {entry.place}
+              </Text>
+            ) : null}
+          </>
+        ) : entry.kind === 'expense' ? (
+          <View style={styles.inline}>
+            <ExpenseBadge />
+            <Text style={styles.primary}>
+              {expenseLabel(entry.category)} · {formatAmd(entry.amountAmd)}
+            </Text>
           </View>
         ) : (
           <>

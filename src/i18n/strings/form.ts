@@ -14,6 +14,10 @@ export const form = defineStrings(
     'form.title.edit': 'Edit entry',
     'form.title.newRefuel': 'New refuel',
     'form.title.editRefuel': 'Edit refuel',
+    'form.title.newService': 'New service',
+    'form.title.editService': 'Edit service',
+    'form.title.newExpense': 'New expense',
+    'form.title.editExpense': 'Edit expense',
     'form.close': 'Close',
 
     'form.kind.trip': 'Trip',
@@ -22,6 +26,10 @@ export const form = defineStrings(
     'form.kindHint.trip': 'Where you drove, and the range left after.',
     'form.kindHint.reading': 'What the dashboard shows as range left right now.',
     'form.kindHint.refuel': 'Fuel you bought: litres and the total paid.',
+    'form.kindHint.service': 'Work on the car: what was done, what it cost, when to do it again.',
+    'form.kindHint.expense': 'Any other car cost: insurance, fines, parking, a wash…',
+    'form.odometerOptional': 'Odometer (optional)',
+    'form.unit.months': 'mo',
 
     'form.route': 'Route',
     'form.gpsDistance': 'GPS distance {km}',
@@ -104,6 +112,10 @@ export const form = defineStrings(
     'form.title.edit': 'Խմբագրել գրառումը',
     'form.title.newRefuel': 'Նոր լիցքավորում',
     'form.title.editRefuel': 'Խմբագրել լիցքավորումը',
+    'form.title.newService': 'Նոր սպասարկում',
+    'form.title.editService': 'Խմբագրել սպասարկումը',
+    'form.title.newExpense': 'Նոր ծախս',
+    'form.title.editExpense': 'Խմբագրել ծախսը',
     'form.close': 'Փակել',
 
     'form.kind.trip': 'Ուղևորություն',
@@ -112,6 +124,11 @@ export const form = defineStrings(
     'form.kindHint.trip': 'Ուր եք գնացել, և որքան պաշար է մնացել։',
     'form.kindHint.reading': 'Որքան պաշար է հիմա ցույց տալիս վահանակը։',
     'form.kindHint.refuel': 'Գնված վառելիքը՝ լիտրեր և վճարված գումար։',
+    'form.kindHint.service': 'Մեքենայի սպասարկում՝ ինչ է արվել, ինչ արժեցել, երբ կրկնել։',
+    'form.kindHint.expense':
+      'Մեքենայի այլ ծախսեր՝ ապահովագրություն, տուգանքներ, կայանատեղի, լվացում…',
+    'form.odometerOptional': 'Վազքաչափ (ըստ ցանկության)',
+    'form.unit.months': 'ամիս',
 
     'form.route': 'Երթուղի',
     'form.gpsDistance': 'Ըստ GPS-ի՝ {km}',
@@ -195,6 +212,10 @@ export const form = defineStrings(
     'form.title.edit': 'Изменить запись',
     'form.title.newRefuel': 'Новая заправка',
     'form.title.editRefuel': 'Изменить заправку',
+    'form.title.newService': 'Новое обслуживание',
+    'form.title.editService': 'Изменить обслуживание',
+    'form.title.newExpense': 'Новый расход',
+    'form.title.editExpense': 'Изменить расход',
     'form.close': 'Закрыть',
 
     'form.kind.trip': 'Поездка',
@@ -203,6 +224,10 @@ export const form = defineStrings(
     'form.kindHint.trip': 'Куда ездили и сколько запаса хода осталось.',
     'form.kindHint.reading': 'Какой запас хода сейчас показывает приборная панель.',
     'form.kindHint.refuel': 'Купленное топливо: литры и сумма.',
+    'form.kindHint.service': 'Работы с машиной: что сделали, сколько стоило, когда повторить.',
+    'form.kindHint.expense': 'Прочие расходы на машину: страховка, штрафы, парковка, мойка…',
+    'form.odometerOptional': 'Пробег (необязательно)',
+    'form.unit.months': 'мес.',
 
     'form.route': 'Маршрут',
     'form.gpsDistance': 'По GPS: {km}',

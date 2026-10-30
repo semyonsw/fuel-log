@@ -52,7 +52,7 @@ export const RangeCard = memo(function RangeCard({
             </Pattern>
           </Defs>
           <Rect width="100%" height="100%" fill="url(#dots)" />
-          {Array.from({ length: Math.floor((cardSize.w - 32) / 10) + 1 }, (_, i) => (
+          {Array.from({ length: Math.max(0, Math.floor((cardSize.w - 32) / 10) + 1) }, (_, i) => (
             <Line
               key={i}
               x1={16 + i * 10}

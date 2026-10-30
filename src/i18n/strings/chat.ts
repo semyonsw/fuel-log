@@ -31,7 +31,7 @@ export const chat = defineStrings(
 
     'chat.emptyTitle': 'Tell me what happened, or send a dashboard photo',
     'chat.emptyText':
-      'For example: “I bought 15 L for 9000 AMD, my fuel was 15 km, now it shows 250 km.” You get the entries to check, then one Approve saves them. You can also ask about your log.',
+      'For example: “I bought 15 L for 9000 AMD, my fuel was 15 km, now it shows 250 km.” You get the entries to check, then one Approve saves them. You can also ask about your log, or fix and delete entries the same way.',
     'chat.addGeminiKey': 'Add your Gemini API key',
     'chat.thinking': 'Gemini is thinking…',
     'chat.photoReady': 'Photo ready to send',
@@ -120,7 +120,7 @@ export const chat = defineStrings(
 
     'chat.emptyTitle': 'Պատմեք, թե ինչ եղավ, կամ ուղարկեք վահանակի լուսանկար',
     'chat.emptyText':
-      'Օրինակ՝ «Լցրի 15 լ 9000 AMD-ով, պաշարը 15 կմ էր, հիմա ցույց է տալիս 250 կմ»։ Կստանաք գրառումները ստուգելու համար, և մեկ «Հաստատել»-ը կպահպանի դրանք։ Կարող եք նաև հարցնել ձեր մատյանի մասին։',
+      'Օրինակ՝ «Լցրի 15 լ 9000 AMD-ով, պաշարը 15 կմ էր, հիմա ցույց է տալիս 250 կմ»։ Կստանաք գրառումները ստուգելու համար, և մեկ «Հաստատել»-ը կպահպանի դրանք։ Կարող եք նաև հարցնել ձեր մատյանի մասին կամ նույն կերպ ուղղել ու ջնջել գրառումներ։',
     'chat.addGeminiKey': 'Ավելացնել Gemini API բանալին',
     'chat.thinking': 'Gemini-ն մտածում է…',
     'chat.photoReady': 'Լուսանկարը պատրաստ է ուղարկման',
@@ -213,7 +213,7 @@ export const chat = defineStrings(
 
     'chat.emptyTitle': 'Расскажите, что было, или пришлите фото приборной панели',
     'chat.emptyText':
-      'Например: «Залил 15 л за 9000 AMD, запас был 15 км, теперь показывает 250 км». Появятся записи для проверки, одна кнопка «Подтвердить» сохранит их все. Можно и спросить что-то о журнале.',
+      'Например: «Залил 15 л за 9000 AMD, запас был 15 км, теперь показывает 250 км». Появятся записи для проверки, одна кнопка «Подтвердить» сохранит их все. Можно и спросить что-то о журнале, а также исправить или удалить запись.',
     'chat.addGeminiKey': 'Добавить API-ключ Gemini',
     'chat.thinking': 'Gemini думает…',
     'chat.photoReady': 'Фото готово к отправке',

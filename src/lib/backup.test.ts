@@ -6,6 +6,7 @@ import {
   backupFileName,
   buildBackup,
   folderLabel,
+  importedSettings,
   isBackupFile,
   mergeById,
   parseBackup,
@@ -24,11 +25,35 @@ const sample = () =>
         station: 'Max Petrol',
         address: 'Komitas 5',
         grade: '92' as const,
+        odometerKm: 81234,
+      },
+      {
+        id: 's',
+        at: at(16, 11, 0),
+        kind: 'service' as const,
+        category: 'oil' as const,
+        costAmd: 25000,
+        odometerKm: 81300,
+        place: 'Garage',
+        remindKm: 10000,
+        remindMonths: 12,
+      },
+      {
+        id: 'x',
+        at: at(16, 12, 0),
+        kind: 'expense' as const,
+        category: 'wash' as const,
+        amountAmd: 3000,
       },
       trip('g', at(16, 10, 0), 'a', 'b', { track: [{ lat: 40.1, lon: 44.5, t: 1 }] }),
     ],
     chats: [{ ...newChat('c1', 5), messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }] }],
-    settings: { consumption: '8', geminiModel: 'gemini-3.8-flash' },
+    settings: {
+      consumption: '8',
+      geminiModel: 'gemini-3.8-flash',
+      fuelBudget: '60000',
+      expenseBudget: '20000',
+    },
     apiKey: 'AIza-test',
     appVersion: '1.1.0',
     now: at(16, 19, 5),
@@ -73,6 +98,38 @@ describe('parseBackup rejects what is not ours', () => {
       chats: [],
       settings: { consumption: '', geminiModel: '' },
       geminiApiKey: '',
+    });
+  });
+  it('a file from before budgets carries none, rather than blank ones', () => {
+    const old = {
+      app: 'fuel-log',
+      format: 1,
+      entries: [],
+      settings: { consumption: '7', geminiModel: 'm' },
+    };
+    const r = parseBackup(JSON.stringify(old));
+    expect(r.ok && r.backup.settings).toEqual({ consumption: '7', geminiModel: 'm' });
+  });
+});
+
+describe('importedSettings', () => {
+  const phone = { consumption: '7', geminiModel: 'a', fuelBudget: '50000', expenseBudget: '' };
+  const file = { consumption: '8', geminiModel: 'b', fuelBudget: '60000', expenseBudget: '9000' };
+
+  it('replace: the file wins', () => {
+    expect(importedSettings(phone, file, 'replace')).toEqual(file);
+  });
+
+  it('merge: the file only fills what the phone has blank', () => {
+    expect(importedSettings(phone, file, 'merge')).toEqual({ ...phone, expenseBudget: '9000' });
+  });
+
+  it('a file from before budgets keeps the phone budgets, even on replace', () => {
+    const old = { consumption: '8', geminiModel: 'b' };
+    expect(importedSettings(phone, old, 'replace')).toEqual({
+      ...phone,
+      consumption: '8',
+      geminiModel: 'b',
     });
   });
 });

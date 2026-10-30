@@ -2,7 +2,6 @@
  * Shared building blocks: the small vocabulary every screen is assembled from.
  *
  *   Tap         Pressable with the app's one pressed look (dim + slight shrink)
- *   Card        a surface panel
  *   Chip        a pill that is tappable, optionally "on"
  *   Segmented   equal-width options in one track (Trip/Range/Refuel, Today/Week/Month/All)
  *   Field       label + TextInput + error line, 56 high so it's thumb-friendly
@@ -57,10 +56,6 @@ export function Tap({
       {children}
     </Pressable>
   );
-}
-
-export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[styles.card, style]}>{children}</View>;
 }
 
 export function Chip({
@@ -334,13 +329,6 @@ export function ConfirmSheet({
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   disabledTap: { opacity: 0.4 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.lg,
-  },
   chip: {
     minHeight: 40,
     paddingHorizontal: spacing.md + 2,

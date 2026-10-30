@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fuel Log",
     "slug": "fuel-log",
-    "version": "1.6.1",
+    "version": "1.7.0",
     "orientation": "portrait",
     "platforms": [
       "android"
@@ -21,7 +21,7 @@
     ],
     "android": {
       "package": "com.semyonsw.fuellog",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0D0C"
@@ -33,7 +33,25 @@
         "POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "com.google.android.c2dm.permission.RECEIVE",
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
+        "android.permission.READ_APP_BADGE",
+        "com.anddoes.launcher.permission.UPDATE_COUNT",
+        "com.htc.launcher.permission.READ_SETTINGS",
+        "com.htc.launcher.permission.UPDATE_SHORTCUT",
+        "com.huawei.android.launcher.permission.CHANGE_BADGE",
+        "com.huawei.android.launcher.permission.READ_SETTINGS",
+        "com.huawei.android.launcher.permission.WRITE_SETTINGS",
+        "com.majeur.launcher.permission.UPDATE_BADGE",
+        "com.oppo.launcher.permission.READ_SETTINGS",
+        "com.oppo.launcher.permission.WRITE_SETTINGS",
+        "com.sec.android.provider.badge.permission.READ",
+        "com.sec.android.provider.badge.permission.WRITE",
+        "com.sonyericsson.home.permission.BROADCAST_BADGE",
+        "com.sonymobile.home.permission.PROVIDER_INSERT_BADGE",
+        "me.everything.badger.permission.BADGE_COUNT_READ",
+        "me.everything.badger.permission.BADGE_COUNT_WRITE"
       ]
     },
     "plugins": [
@@ -120,7 +138,8 @@
       ],
       "@maplibre/maplibre-react-native",
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-quick-actions"
     ]
   }
 }

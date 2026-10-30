@@ -6,9 +6,11 @@
  * ("📷 Photo") and the entries the model proposed are still there. While a
  * chat is open the photo stays in memory so corrections can refer to it.
  *
- * A model message can carry proposed entries; once the user approves them,
- * `savedIds` records the log entries they became, so the card shows "Saved"
- * and cannot add the same refuel twice.
+ * A model message can carry proposed changes (adds, updates, deletes); once
+ * the user approves them, `savedIds` records the log entries they touched, so
+ * the card shows "Saved" and cannot add the same refuel twice. Chats saved
+ * before updates and deletes existed hold plain proposals with no `op`; they
+ * read back as adds, which is all they ever were.
  */
 
 import { t } from '../i18n';
@@ -28,7 +30,7 @@ export type ChatMessage = {
   hasPhoto?: boolean;
   proposals?: Proposal[];
   confidence?: Confidence | null;
-  /** Ids of the log entries the approved proposals became. */
+  /** Ids of the log entries the approved changes added, updated or deleted. */
   savedIds?: string[];
   /** A failed request shown in the thread; never sent back to the model. */
   error?: boolean;

@@ -8,12 +8,32 @@ import { chat } from './chat';
 import { common } from './common';
 import { components } from './components';
 import { form } from './form';
+import { care } from './care';
+import { insights } from './insights';
+import { kinds } from './kinds';
+import { shortcuts } from './shortcuts';
+import { stats } from './stats';
 import { lib } from './lib';
 import { services } from './services';
 import { summary } from './summary';
 import { welcome } from './welcome';
 
-const AREAS = [common, chat, welcome, components, services, summary, lib, app, form] as const;
+const AREAS = [
+  common,
+  chat,
+  welcome,
+  components,
+  services,
+  summary,
+  lib,
+  app,
+  form,
+  kinds,
+  care,
+  stats,
+  insights,
+  shortcuts,
+] as const;
 
 type Merge<T extends readonly { en: object }[]> = T extends readonly [
   infer H extends { en: object },

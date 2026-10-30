@@ -12,6 +12,7 @@ import {
   fuelCost,
   kmForMoney,
   kmPerLiterFromRefuels,
+  kmPerLiterPoints,
   latestPricePerLiter,
   periodFuelCost,
   shiftDay,
@@ -20,6 +21,7 @@ import {
   tripFuelEstimate,
 } from './fuel';
 import { formatAmd } from './numbers';
+import type { Entry } from '../types';
 
 describe('latestPricePerLiter', () => {
   it('is undefined with no refuels', () => {
@@ -68,6 +70,36 @@ describe('kmPerLiterFromRefuels', () => {
   it('skips a refuel the range did not rise across', () => {
     const log = [reading('r', at(10, 8, 0), 300), refuel('f', at(10, 9, 0), 5, 2500, 290)];
     expect(kmPerLiterFromRefuels(log)).toBeUndefined();
+  });
+
+  it('never takes a service or expense as the reading before', () => {
+    const log: Entry[] = [
+      reading('r', at(10, 8, 0), 50),
+      { id: 's', at: at(10, 8, 30), kind: 'service', category: 'oil', costAmd: 1, rangeKm: 200 },
+      { id: 'x', at: at(10, 8, 40), kind: 'expense', category: 'wash', amountAmd: 1, rangeKm: 10 },
+      refuel('f', at(10, 9, 0), 30, 15000, 290),
+    ];
+    expect(kmPerLiterFromRefuels(log)).toBe(8);
+  });
+});
+
+describe('kmPerLiterPoints', () => {
+  it('is one point per qualifying refuel, oldest first, whatever the input order', () => {
+    const log = [
+      refuel('f2', at(12, 9, 0), 20, 10000, 300), // 10 km/L
+      reading('r2', at(12, 8, 0), 100),
+      refuel('f0', at(9, 9, 0), 10, 5000), // no range after: skipped
+      refuel('f1', at(10, 9, 0), 30, 15000, 290), // 8 km/L
+      reading('r1', at(10, 8, 0), 50),
+    ];
+    expect(kmPerLiterPoints(log)).toEqual([
+      { id: 'f1', at: at(10, 9, 0), kmPerL: 8 },
+      { id: 'f2', at: at(12, 9, 0), kmPerL: 10 },
+    ]);
+  });
+
+  it('is empty for an empty log', () => {
+    expect(kmPerLiterPoints([])).toEqual([]);
   });
 });
 

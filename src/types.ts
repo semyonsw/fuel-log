@@ -11,7 +11,7 @@
  * Distances and range are kilometres, money is whole AMD, times are epoch ms.
  */
 
-export type EntryKind = 'trip' | 'reading' | 'refuel';
+export type EntryKind = 'trip' | 'reading' | 'refuel' | 'service' | 'expense';
 
 interface EntryBase {
   id: string;
@@ -60,9 +60,52 @@ export interface RefuelEntry extends EntryBase {
   /** Where the station is, free text. Optional. */
   address?: string;
   grade?: FuelGrade;
+  /** Odometer at the pump, km. Optional; it lets km-based service reminders follow real driving. */
+  odometerKm?: number;
 }
 
 /** The pump grades sold in Armenia; the Sentra's manual asks for regular. */
 export type FuelGrade = '92' | '95' | '98' | 'diesel';
 
-export type Entry = TripEntry | ReadingEntry | RefuelEntry;
+/**
+ * Car care, kept apart from other spending because it is what reminders are
+ * about: "oil again in 10 000 km or 12 months, whichever comes first". The
+ * odometer at the service is the km baseline; a later odometer (another
+ * service, or a refuel that recorded one) says how far the car has gone since.
+ */
+export type ServiceCategory = 'oil' | 'repair' | 'tires' | 'inspection' | 'other';
+
+export interface ServiceEntry extends EntryBase {
+  kind: 'service';
+  category: ServiceCategory;
+  /** Total paid, AMD; 0 is allowed (warranty work, a free check). */
+  costAmd: number;
+  odometerKm?: number;
+  /** Workshop or place, free text. */
+  place?: string;
+  /** Remind after this many km past `odometerKm`. */
+  remindKm?: number;
+  /** Remind this many months after `at`. */
+  remindMonths?: number;
+}
+
+/** Everything else the car costs. Counted in spending, never in fuel figures. */
+export type ExpenseCategory =
+  | 'insurance'
+  | 'fines'
+  | 'taxes'
+  | 'parking'
+  | 'wash'
+  | 'tolls'
+  | 'parts'
+  | 'accessories'
+  | 'other';
+
+export interface ExpenseEntry extends EntryBase {
+  kind: 'expense';
+  category: ExpenseCategory;
+  /** Total paid, AMD. */
+  amountAmd: number;
+}
+
+export type Entry = TripEntry | ReadingEntry | RefuelEntry | ServiceEntry | ExpenseEntry;

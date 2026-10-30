@@ -9,6 +9,10 @@
  *                     estimates use. Blank means "derive it from the log", and
  *                     the placeholder shows that derived figure so the user can
  *                     see what blank currently means.
+ *   Monthly budgets   fuel, and services + expenses, in AMD as typed; the
+ *                     Summary's "This month" card measures against them.
+ *                     Blank means no budget, and the card still shows the
+ *                     spending and its forecast.
  *   Data              export / import / backup folder (DataSection).
  */
 
@@ -30,6 +34,8 @@ export function SettingsScreen() {
   const entries = useLog((s) => s.entries);
   const language = useSettings((s) => s.language);
   const consumption = useSettings((s) => s.consumption);
+  const fuelBudget = useSettings((s) => s.fuelBudget);
+  const expenseBudget = useSettings((s) => s.expenseBudget);
   const setSettings = useSettings((s) => s.set);
 
   // Passing no typed value asks for the log's own figure.
@@ -75,8 +81,53 @@ export function SettingsScreen() {
         <Text style={styles.hint}>{t('app.settings.consumptionHint')}</Text>
       </View>
 
+      <View style={styles.group}>
+        <SectionLabel>{t('stats.settings.fuelBudget')}</SectionLabel>
+        <AmdInput
+          value={fuelBudget}
+          onChange={(v) => setSettings({ fuelBudget: v })}
+          a11y={t('stats.settings.fuelBudgetA11y')}
+        />
+        <SectionLabel>{t('stats.settings.expenseBudget')}</SectionLabel>
+        <AmdInput
+          value={expenseBudget}
+          onChange={(v) => setSettings({ expenseBudget: v })}
+          a11y={t('stats.settings.expenseBudgetA11y')}
+        />
+        <Text style={styles.hint}>{t('stats.settings.budgetHint')}</Text>
+      </View>
+
       <DataSection />
     </ScrollView>
+  );
+}
+
+function AmdInput({
+  value,
+  onChange,
+  a11y,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  a11y: string;
+}) {
+  return (
+    <View style={styles.box}>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={t('stats.settings.none')}
+        placeholderTextColor={colors.muted}
+        selectionColor={colors.accent}
+        cursorColor={colors.accent}
+        keyboardType="number-pad"
+        accessibilityLabel={a11y}
+        style={styles.input}
+      />
+      <Text style={styles.suffix} numberOfLines={1}>
+        AMD
+      </Text>
+    </View>
   );
 }
 
