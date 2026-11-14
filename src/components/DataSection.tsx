@@ -76,7 +76,6 @@ export function DataSection() {
       t('summary.data.confirmBody', {
         head,
         entries: plural('summary.data.entries', b.entries.length),
-        chats: plural('summary.data.chats', b.chats.length),
       }),
       [
         { text: t('common.cancel'), style: 'cancel' },

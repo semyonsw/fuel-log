@@ -1,6 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
-
-import { setLang } from '../i18n';
+import { describe, expect, it } from 'vitest';
 
 import { formatDuration, trackDurationMs } from './duration';
 
@@ -40,23 +38,5 @@ describe('formatDuration', () => {
   it('exact hours drop the "0m", including when rounding reaches the hour', () => {
     expect(formatDuration(120 * MIN)).toBe('2h');
     expect(formatDuration(59 * MIN + 45_000)).toBe('1h');
-  });
-});
-
-describe('formatDuration in other languages', () => {
-  afterEach(() => setLang('en'));
-
-  it('Russian', () => {
-    setLang('ru');
-    expect(formatDuration(1_000)).toBe('<1 мин');
-    expect(formatDuration(24 * MIN)).toBe('24 мин');
-    expect(formatDuration(120 * MIN)).toBe('2 ч');
-    expect(formatDuration(94 * MIN)).toBe('1 ч 34 мин');
-  });
-
-  it('Armenian', () => {
-    setLang('hy');
-    expect(formatDuration(24 * MIN)).toBe('24 րոպե');
-    expect(formatDuration(94 * MIN)).toBe('1 ժ 34 ր');
   });
 });

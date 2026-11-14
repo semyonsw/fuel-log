@@ -1,73 +1,30 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { plural, pluralForm, setLang, t } from './index';
+import { plural, t } from './index';
 import { STRINGS } from './strings';
 
-/** The three tables must stay in lockstep, and templating must not lose a value. */
-
-afterEach(() => setLang('en'));
-
-const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
-
 describe('tables', () => {
-  for (const lang of ['hy', 'ru'] as const) {
-    it(`${lang} has every English key, non-empty, with the same {placeholders}`, () => {
-      const en = STRINGS.en as Record<string, string>;
-      const other = STRINGS[lang] as Record<string, string>;
-      expect(Object.keys(other).sort()).toEqual(Object.keys(en).sort());
-      for (const key of Object.keys(en)) {
-        expect(other[key].trim(), key).not.toBe('');
-        expect(placeholders(other[key]), key).toEqual(placeholders(en[key]));
-      }
-    });
-  }
+  it('has no empty strings', () => {
+    for (const [key, value] of Object.entries(STRINGS)) expect(value.trim(), key).not.toBe('');
+  });
 });
 
 describe('t', () => {
-  it('reads the current language', () => {
+  it('reads the English table', () => {
     expect(t('common.today')).toBe('Today');
-    setLang('ru');
-    expect(t('common.today')).toBe('Сегодня');
-    setLang('hy');
-    expect(t('common.today')).toBe('Այսօր');
-  });
-});
-
-describe('pluralForm', () => {
-  it('follows Russian one/few/many', () => {
-    expect([1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 101, 111].map((n) => pluralForm(n, 'ru'))).toEqual([
-      'one',
-      'few',
-      'few',
-      'many',
-      'many',
-      'many',
-      'many',
-      'one',
-      'few',
-      'many',
-      'one',
-      'many',
-    ]);
   });
 
-  it('English and Armenian', () => {
-    expect([pluralForm(1, 'en'), pluralForm(2, 'en'), pluralForm(0, 'en')]).toEqual([
-      'one',
-      'other',
-      'other',
-    ]);
-    expect([pluralForm(1, 'hy'), pluralForm(7, 'hy')]).toEqual(['one', 'other']);
-  });
-
-  it('fractions are "other"', () => {
-    expect(pluralForm(1.5, 'ru')).toBe('other');
+  it('fills {placeholders} and leaves unknown ones alone', () => {
+    expect(t('summary.data.entries.other', { n: 3 })).toBe('3 entries');
+    expect(t('summary.data.entries.other')).toBe('{n} entries');
   });
 });
 
 describe('plural', () => {
-  it('falls back to .other when a form is missing', () => {
-    // No plural families in the tables yet is fine: an unknown base returns the key path.
-    expect(typeof plural).toBe('function');
+  it('uses .one for exactly 1 and .other otherwise', () => {
+    expect(plural('summary.data.entries', 1)).toBe('1 entry');
+    expect(plural('summary.data.entries', 0)).toBe('0 entries');
+    expect(plural('summary.data.entries', 5)).toBe('5 entries');
+    expect(plural('summary.data.entries', 1.5)).toBe('1.5 entries');
   });
 });

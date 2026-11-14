@@ -14,8 +14,8 @@
  * nearest minute: "24 min", "1h 34m", and "2h" when the minutes are zero (a
  * trailing "0m" is clutter). Under half a minute reads "<1 min" rather than
  * "0 min", which would look like a recording that failed. Every word the badge
- * prints lives in DURATION_WORDS, which reads the current language's
- * `lib.duration.*` strings at call time (abbreviations, so no plural forms).
+ * prints lives in DURATION_WORDS, which reads the `lib.duration.*` strings
+ * (abbreviations, so no plural forms).
  */
 
 import { t } from '../i18n';

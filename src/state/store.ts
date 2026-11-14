@@ -29,14 +29,14 @@
  * forever. Select `s.entries` itself and derive with `useMemo` in the component.
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 
 import { sanitizeEntries } from '../lib/sanitize';
 import type { Entry } from '../types';
+import { LOG_KEY, persistStorage } from './legacyStorage';
 
-export const STORAGE_KEY = 'fuel-log/v1';
+export const STORAGE_KEY = LOG_KEY;
 
 interface LogState {
   /** In no particular order — readers sort with `sortNewestFirst`. */
@@ -68,7 +68,7 @@ export const useLog = create<LogState>()(
     {
       name: STORAGE_KEY,
       version: 1,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistStorage,
       partialize: (state) => ({ entries: state.entries }),
       // Nothing stored (first launch) keeps what is in memory; anything stored is
       // trusted only as far as `sanitizeEntries` vouches for it.

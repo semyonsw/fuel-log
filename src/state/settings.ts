@@ -1,45 +1,31 @@
 /**
  * The few things the app remembers that are not the log.
  *
- *   consumption   the calculator's typed L/100 km. Remembered because the
- *                 per-trip cost estimate uses it too; blank = derive from log.
- *   geminiModel   the chat's chosen model.
+ *   consumption   the typed L/100 km. The per-trip cost estimate and the
+ *                 calculator use it; blank = derive from the log.
  *   backupDirUri  the folder the user granted once for auto-backup (an SAF
  *                 tree URI; Android keeps the grant across app updates).
  *   onboarded     the welcome/permissions screen has been answered.
- *   fuelBudget,   monthly budgets in AMD as typed (blank = none): refuels
- *   expenseBudget count against the first, services and expenses against
- *                 the second.
- *   language      the UI language chosen in Settings. Settings saved before
- *                 it existed have none and read back as English (`merge`).
  *
- * The Gemini API key is NOT persisted here: it lives in the Android keystore
- * via expo-secure-store and is only mirrored in memory (`apiKey`) so screens
- * and the backup can read it synchronously.
+ * Keys 1.7.x stored (budgets, language, Gemini model) are left out of
+ * `partialize`, so the next write drops them.
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 
-import { DEFAULT_LANGUAGE, toLanguage, type Language } from '../lib/language';
-import { DEFAULT_MODEL } from '../lib/models';
+import { persistStorage, SETTINGS_KEY } from './legacyStorage';
 
-export const SETTINGS_KEY = 'fuel-log/settings/v1';
+export { SETTINGS_KEY };
 
 export type BackupStatus =
   { at: number; ok: true; file: string } | { at: number; ok: false; error: string };
 
 interface SettingsState {
   consumption: string;
-  fuelBudget: string;
-  expenseBudget: string;
-  geminiModel: string;
   backupDirUri?: string;
   onboarded: boolean;
-  language: Language;
   lastBackup?: BackupStatus;
-  apiKey: string;
   hydrated: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set' | 'hydrated'>>) => void;
 }
@@ -48,34 +34,35 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       consumption: '',
-      fuelBudget: '',
-      expenseBudget: '',
-      geminiModel: DEFAULT_MODEL,
       onboarded: false,
-      language: DEFAULT_LANGUAGE,
-      apiKey: '',
       hydrated: false,
       set: (patch) => set(patch),
     }),
     {
       name: SETTINGS_KEY,
       version: 1,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: persistStorage,
       partialize: (s) => ({
         consumption: s.consumption,
-        fuelBudget: s.fuelBudget,
-        expenseBudget: s.expenseBudget,
-        geminiModel: s.geminiModel,
         backupDirUri: s.backupDirUri,
         onboarded: s.onboarded,
-        language: s.language,
         lastBackup: s.lastBackup,
       }),
-      // The default shallow merge already keeps 'en' when the key is missing;
-      // this also turns a value this build does not know into 'en'.
+      // Only known keys are taken, so a 1.7.x blob's budgets/language/model
+      // never reach the state.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<SettingsState>;
-        return { ...current, ...p, language: toLanguage(p.language) };
+        return {
+          ...current,
+          ...(typeof p.consumption === 'string' ? { consumption: p.consumption } : {}),
+          ...(typeof p.backupDirUri === 'string' ? { backupDirUri: p.backupDirUri } : {}),
+          ...(typeof p.onboarded === 'boolean' ? { onboarded: p.onboarded } : {}),
+          ...(typeof p.lastBackup === 'object' &&
+          p.lastBackup !== null &&
+          typeof p.lastBackup.at === 'number'
+            ? { lastBackup: p.lastBackup }
+            : {}),
+        };
       },
       onRehydrateStorage: () => () => {
         useSettings.setState({ hydrated: true });

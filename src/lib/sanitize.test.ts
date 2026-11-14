@@ -8,6 +8,7 @@ import { sanitizeEntries } from './sanitize';
  * that would put NaN into a summary or crash a string method do not.
  */
 
+/** What 1.7.x wrote for the two kinds this build no longer has. */
 const service = (extra: Record<string, unknown> = {}) => ({
   id: 's',
   at: 1,
@@ -30,21 +31,17 @@ describe('sanitizeEntries', () => {
   it('passes well-formed rows of every kind through unchanged', () => {
     const rows = [
       reading('r', 1, 100),
-      { ...refuel('f', 2, 30, 15000, 400), station: 'Max', grade: '95', odometerKm: 81000 },
+      // Price rounded to whole AMD can be 0; it must not vanish on load.
+      refuel('f', 2, 30, 0, 400),
+      { ...refuel('n', 2, 0.5, 300), note: 'canister' },
       trip('t', 3, 'a', 'b', { stops: ['c'], distanceKm: 5, track: [{ lat: 1, lon: 2, t: 3 }] }),
-      service({ odometerKm: 81000, place: 'Garage', remindKm: 10000, remindMonths: 12 }),
-      service({ id: 's0', costAmd: 0 }),
-      expense(),
-      // The form rounds to whole AMD, so "0.4" is stored as 0; it must not vanish on load.
-      expense({ id: 'x0', amountAmd: 0 }),
     ];
     expect(sanitizeEntries(JSON.parse(JSON.stringify(rows)))).toEqual(rows);
   });
 
   it('keeps every row shape that versions 1.0-1.6 wrote, as written', () => {
-    // As JSON from AsyncStorage / a 1.x backup: no services, no expenses, no
-    // odometer; optional fields simply absent; a refuel with its price rounded
-    // to 0 and a trip with nothing but its places.
+    // As JSON from AsyncStorage / a 1.x backup: optional fields simply absent;
+    // a refuel with its price rounded to 0 and a trip with nothing but its places.
     const old = [
       { id: 'r1', at: 1, kind: 'reading', rangeKm: 0 },
       { id: 't1', at: 2, kind: 'trip', from: '', stops: [], to: '' },
@@ -67,9 +64,6 @@ describe('sanitizeEntries', () => {
         liters: 30,
         priceAmd: 15000,
         rangeKm: 400,
-        station: 'Max',
-        address: 'Komitas',
-        grade: 'diesel',
       },
     ];
     expect(sanitizeEntries(JSON.parse(JSON.stringify(old)))).toEqual(old);
@@ -103,27 +97,14 @@ describe('sanitizeEntries', () => {
     expect(sanitizeEntries([{ id: 'a', at: 0, kind: 'reading', rangeKm: 'full' }])).toEqual([]);
   });
 
-  it('drops a service or expense with an unknown category or a bad amount', () => {
-    expect(
-      sanitizeEntries([
-        service({ category: 'wash' }),
-        service({ costAmd: -5 }),
-        service({ costAmd: undefined }),
-        expense({ category: 'oil' }),
-        expense({ amountAmd: -5 }),
-        expense({ amountAmd: 'lots' }),
-      ]),
-    ).toEqual([]);
-  });
-
   it('keeps a row but drops an optional field of the wrong type', () => {
     expect(
       sanitizeEntries([
         { ...reading('r', 0, 100), note: 5 },
-        { ...refuel('f', 0, 30, 15000), rangeKm: 'x', station: 7, grade: '80', odometerKm: NaN },
-        service({ remindKm: 0, remindMonths: 'soon', place: {} }),
+        { ...refuel('f', 0, 30, 15000), rangeKm: 'x' },
+        { ...trip('t', 0, 'a', 'b'), rangeKm: -1, note: null },
       ]),
-    ).toEqual([reading('r', 0, 100), refuel('f', 0, 30, 15000), service()]);
+    ).toEqual([reading('r', 0, 100), refuel('f', 0, 30, 15000), trip('t', 0, 'a', 'b')]);
   });
 
   it('repairs a trip with missing places or stops instead of losing it', () => {
@@ -142,5 +123,49 @@ describe('sanitizeEntries', () => {
   it('turns anything that is not an array into []', () => {
     expect(sanitizeEntries(undefined)).toEqual([]);
     expect(sanitizeEntries({})).toEqual([]);
+  });
+});
+
+describe('sanitizeEntries on a 1.7.x log', () => {
+  it('drops service and expense rows, however well-formed', () => {
+    const log = [
+      reading('r', 1, 100),
+      service({ odometerKm: 81000, place: 'Garage', remindKm: 10000, remindMonths: 12 }),
+      service({ id: 's0', costAmd: 0 }),
+      expense(),
+      expense({ id: 'x0', amountAmd: 0, rangeKm: 90 }),
+      trip('t', 2, 'a', 'b'),
+    ];
+    expect(sanitizeEntries(JSON.parse(JSON.stringify(log)))).toEqual([
+      reading('r', 1, 100),
+      trip('t', 2, 'a', 'b'),
+    ]);
+  });
+
+  it('keeps a refuel but strips its station, address, grade and odometer', () => {
+    const old = {
+      ...refuel('f', 2, 30, 15000, 400),
+      note: 'full tank',
+      station: 'Max Petrol',
+      address: 'Komitas 5',
+      grade: '95',
+      odometerKm: 81000,
+    };
+    expect(sanitizeEntries([old])).toEqual([
+      { ...refuel('f', 2, 30, 15000, 400), note: 'full tank' },
+    ]);
+  });
+
+  it('strips retired refuel keys even when they were malformed', () => {
+    const old = { ...refuel('f', 2, 30, 15000), station: 7, grade: '80', odometerKm: NaN };
+    const [kept] = sanitizeEntries([old]);
+    expect(kept).toEqual(refuel('f', 2, 30, 15000));
+    expect(Object.keys(kept!)).not.toContain('station');
+  });
+
+  it('leaves a trip that happens to carry a "station" key alone', () => {
+    // Only refuels had these fields; nothing else is rewritten.
+    const t = { ...trip('t', 0, 'a', 'b'), station: 'x' };
+    expect(sanitizeEntries([t])).toEqual([t]);
   });
 });

@@ -1,6 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
-
-import { setLang } from '../i18n';
+import { describe, expect, it } from 'vitest';
 
 import { at, reading, refuel, trip } from './entries.fixtures';
 import { periodStart, rangeUsedById } from './entries';
@@ -21,7 +19,6 @@ import {
   tripFuelEstimate,
 } from './fuel';
 import { formatAmd } from './numbers';
-import type { Entry } from '../types';
 
 describe('latestPricePerLiter', () => {
   it('is undefined with no refuels', () => {
@@ -70,16 +67,6 @@ describe('kmPerLiterFromRefuels', () => {
   it('skips a refuel the range did not rise across', () => {
     const log = [reading('r', at(10, 8, 0), 300), refuel('f', at(10, 9, 0), 5, 2500, 290)];
     expect(kmPerLiterFromRefuels(log)).toBeUndefined();
-  });
-
-  it('never takes a service or expense as the reading before', () => {
-    const log: Entry[] = [
-      reading('r', at(10, 8, 0), 50),
-      { id: 's', at: at(10, 8, 30), kind: 'service', category: 'oil', costAmd: 1, rangeKm: 200 },
-      { id: 'x', at: at(10, 8, 40), kind: 'expense', category: 'wash', amountAmd: 1, rangeKm: 10 },
-      refuel('f', at(10, 9, 0), 30, 15000, 290),
-    ];
-    expect(kmPerLiterFromRefuels(log)).toBe(8);
   });
 });
 
@@ -405,25 +392,5 @@ describe('periodFuelCost', () => {
       trip('b', at(16, 10, 0), 'y', 'x', { distanceKm: 10 }),
     ];
     expect(periodFuelCost(two, today, Infinity, 10)!.amd).toBe(1100);
-  });
-});
-
-describe('calculate in Russian', () => {
-  afterEach(() => setLang('en'));
-
-  it('names the missing input in the current language', () => {
-    setLang('ru');
-    expect(
-      calculate({
-        mode: 'km',
-        amount: '100',
-        price: '',
-        consumption: '',
-        entries: [refuel('f', 0, 30, 15000)],
-      }),
-    ).toEqual({
-      ok: false,
-      missing: 'Укажите расход в Настройках для расчёта',
-    });
   });
 });

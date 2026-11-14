@@ -26,7 +26,7 @@
 
 import { t } from '../i18n';
 import type { Entry, RefuelEntry, TripEntry } from '../types';
-import { isCost, rangeUsedById } from './entries';
+import { rangeUsedById } from './entries';
 import { parseNumber } from './numbers';
 
 function sortedAsc(entries: Entry[]): Entry[] {
@@ -49,11 +49,10 @@ export type KmPerLiterPoint = { id: string; at: number; kmPerL: number };
 /**
  * One km/L figure per refuel that recorded range after AND has a range
  * reading before it (the jump across the fill-up ÷ litres), oldest first. A
- * refuel the range did not rise across tells nothing and is skipped. Services
- * and expenses never count as the reading before: they are not about range.
+ * refuel the range did not rise across tells nothing and is skipped.
  */
 export function kmPerLiterPoints(entries: Entry[]): KmPerLiterPoint[] {
-  const asc = sortedAsc(entries).filter((e) => !isCost(e));
+  const asc = sortedAsc(entries);
   const points: KmPerLiterPoint[] = [];
   asc.forEach((e, i) => {
     if (e.kind !== 'refuel' || e.liters <= 0 || e.rangeKm === undefined) return;
@@ -219,7 +218,7 @@ export type CalcOutcome =
 /**
  * The Summary calculator. Blank price = the latest refuel's AMD/L; blank
  * consumption = the log's figure. The first missing input is named, in the
- * order the user would fill them, in the current language (it is shown as is).
+ * order the user would fill them (it is shown as is).
  */
 export function calculate(input: {
   mode: CalcMode;

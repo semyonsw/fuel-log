@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SETTINGS_KEY, useSettings } from './settings';
 
 /**
- * The settings store against the in-memory AsyncStorage stub: the language
- * choice is written out, and settings saved by a build from before the chooser
- * read back as English without losing anything else.
+ * The settings store against the in-memory AsyncStorage stub: what it writes
+ * out, what it reads back, and that a 1.7.x blob (language, budgets, Gemini
+ * model) hydrates to the keys this build knows and nothing else.
  */
 
 /** Let the persist middleware's async write land. */
@@ -17,7 +17,13 @@ const stored = (state: unknown) =>
 
 beforeEach(async () => {
   await flush();
-  useSettings.setState({ language: 'en', consumption: '', onboarded: false, hydrated: false });
+  useSettings.setState({
+    consumption: '',
+    onboarded: false,
+    backupDirUri: undefined,
+    lastBackup: undefined,
+    hydrated: false,
+  });
   await AsyncStorage.removeItem(SETTINGS_KEY);
 });
 
@@ -26,40 +32,72 @@ afterEach(async () => {
   await AsyncStorage.removeItem(SETTINGS_KEY);
 });
 
-describe('language', () => {
-  it('defaults to English', () => {
-    expect(useSettings.getState().language).toBe('en');
+describe('settings', () => {
+  it('starts blank and not onboarded', () => {
+    const s = useSettings.getState();
+    expect(s.consumption).toBe('');
+    expect(s.onboarded).toBe(false);
+    expect(s.backupDirUri).toBeUndefined();
   });
 
-  it('is persisted with the other settings', async () => {
-    useSettings.getState().set({ language: 'hy' });
+  it('persists only the known keys', async () => {
+    useSettings.getState().set({ consumption: '7.5', onboarded: true });
     await flush();
     const blob = JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY))!);
-    expect(blob.state.language).toBe('hy');
+    expect(blob.state).toEqual({ consumption: '7.5', onboarded: true });
   });
 
   it('reads back after a relaunch', async () => {
-    await stored({ consumption: '7', onboarded: true, language: 'ru' });
-    await useSettings.persist.rehydrate();
-    expect(useSettings.getState().language).toBe('ru');
-    expect(useSettings.getState().hydrated).toBe(true);
-  });
-
-  it('settings saved before the chooser existed hydrate to English, the rest intact', async () => {
-    useSettings.setState({ language: 'ru' });
-    await flush();
-    await stored({ consumption: '7.5', onboarded: true, backupDirUri: 'content://tree' });
+    const lastBackup = { at: 5, ok: true as const, file: 'fuel-log-backup.json' };
+    await stored({ consumption: '7', onboarded: true, backupDirUri: 'content://tree', lastBackup });
     await useSettings.persist.rehydrate();
     const s = useSettings.getState();
-    expect(s.language).toBe('en');
-    expect(s.consumption).toBe('7.5');
-    expect(s.onboarded).toBe(true);
-    expect(s.backupDirUri).toBe('content://tree');
+    expect(s).toMatchObject({
+      consumption: '7',
+      onboarded: true,
+      backupDirUri: 'content://tree',
+      lastBackup,
+      hydrated: true,
+    });
   });
 
-  it('an unknown stored language reads as English', async () => {
-    await stored({ language: 'de', onboarded: true });
+  it('a 1.7.x blob keeps consumption, onboarded and the folder, and drops the rest', async () => {
+    await stored({
+      consumption: '7.5',
+      onboarded: true,
+      backupDirUri: 'content://tree',
+      language: 'ru',
+      fuelBudget: '60000',
+      expenseBudget: '20000',
+      geminiModel: 'gemini-3.8-flash',
+    });
     await useSettings.persist.rehydrate();
-    expect(useSettings.getState().language).toBe('en');
+    const s = useSettings.getState() as unknown as Record<string, unknown>;
+    expect(s).toMatchObject({
+      consumption: '7.5',
+      onboarded: true,
+      backupDirUri: 'content://tree',
+    });
+    for (const k of ['language', 'fuelBudget', 'expenseBudget', 'geminiModel']) {
+      expect(s).not.toHaveProperty(k);
+    }
+  });
+
+  it('the next write leaves the retired keys behind', async () => {
+    await stored({ consumption: '7', onboarded: true, language: 'hy', fuelBudget: '1' });
+    await useSettings.persist.rehydrate();
+    useSettings.getState().set({ consumption: '8' });
+    await flush();
+    const blob = JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY))!);
+    expect(blob.state).toEqual({ consumption: '8', onboarded: true });
+  });
+
+  it('a stored value of the wrong type is ignored, the default kept', async () => {
+    await stored({ consumption: 7, onboarded: 'yes', backupDirUri: null });
+    await useSettings.persist.rehydrate();
+    const s = useSettings.getState();
+    expect(s.consumption).toBe('');
+    expect(s.onboarded).toBe(false);
+    expect(s.backupDirUri).toBeUndefined();
   });
 });

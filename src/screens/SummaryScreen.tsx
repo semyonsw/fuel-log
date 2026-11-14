@@ -1,14 +1,13 @@
 /**
- * The Summary tab: totals for a period, the fuel calculator, this month's
- * budgets, the per-day breakdown, the editable spending history (refuels,
- * services, expenses), per-station and per-grade tables, and the trend
- * charts. (Export/import lives on Settings, in DataSection.)
+ * The Summary tab: totals for a period, the per-day breakdown, the period's
+ * refuels (tap to edit, or add one for a past date) and the fuel calculator.
+ * (Export/import lives on Settings, in DataSection.)
  *
  * Periods are Today / Week / Month / All / Custom, opening on Today. Custom
  * shows FROM and TO day steppers (FROM ≤ TO ≤ today) and ends at the start of
  * the day after TO, so TO is a whole day. − / + repeat while held; tapping the day opens the
- * calendar, for jumps of weeks. Tiles, BY DAY, REFUELS and the empty state
- * all follow the selected period.
+ * calendar, for jumps of weeks. Every section but the calculator follows the
+ * selected period.
  *
  * Tiles draw the number large and the unit small, the way a dashboard does.
  * Per-day figures go through `summarize` over the FULL entry list with that
@@ -17,17 +16,8 @@
  *
  * "Driving cost ≈" is what the period's trips cost in fuel, the sum of the
  * per-trip estimates the Log shows (`periodFuelCost`). It sits beside
- * "Spent", which is money paid at refuels: on most days nothing is paid, but
- * the driving still burned fuel.
- *
- * Money is split the way the budgets are: "Fuel spent" is refuels, "Other
- * costs" is services and expenses, "Total" the two together. Avg price stays
- * fuel money over litres.
- *
- * Two sections ignore the period on purpose. "This month" is about the
- * calendar month the budgets are for, whatever tab is picked, and "Trends"
- * look back over months and refuels, which a Today tab could not show.
- * Stations and grades follow the period like the lists.
+ * "Fuel spent", which is money paid at refuels: on most days nothing is paid,
+ * but the driving still burned fuel.
  *
  * The calculator's price is not remembered (it changes at every pump). Its
  * consumption is the one set in Settings (the Log's per-trip estimates use it
@@ -41,20 +31,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openDayPicker } from '../components/DayPicker';
 import { dayBounds, splitUnit } from '../components/format';
 import { useHoldRepeat } from '../components/HoldRepeat';
-import { MonthBars, TrendLine } from '../components/Charts';
-import { ChevronIcon, DropIcon, ExpenseBadge, ServiceBadge } from '../components/icons';
+import { ChevronIcon, DropIcon } from '../components/icons';
 import { Segmented, Tap } from '../components/ui';
 import { useNow } from '../components/useNow';
-import { plural, t, type StringKey } from '../i18n';
-import { expenseLabel, serviceLabel } from '../lib/categories';
+import { t, type StringKey } from '../i18n';
 import { consumptionNote, consumptionSource } from '../lib/consumption';
 import {
   dayKey,
   dayLabel,
-  entryAmd,
   formatTime,
   groupByDay,
-  isCost,
   periodStart,
   sortNewestFirst,
   summarize,
@@ -64,46 +50,26 @@ import {
   clampCustomRange,
   customPeriod,
   effectiveKmPerLiter,
-  kmPerLiterPoints,
   latestPricePerLiter,
   periodFuelCost,
   shiftDay,
   type CalcMode,
 } from '../lib/fuel';
 import { formatAmd, formatKm, formatLiters } from '../lib/numbers';
-import {
-  budgetStatus,
-  gradeStats,
-  monthBounds,
-  monthForecast,
-  monthlySpending,
-  pricePerLiterPoints,
-  spendingIn,
-  stationStats,
-  type RefuelGroup,
-} from '../lib/stats';
-import { gradeLabel, stationLine } from '../lib/stations';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
-import type { Entry, ExpenseEntry, RefuelEntry, ServiceEntry } from '../types';
+import type { Entry, RefuelEntry } from '../types';
 
 type Period = 'today' | 'week' | 'month' | 'all' | 'custom';
-// Labels are looked up at render time so they follow the current language.
 const PERIODS: Period[] = ['today', 'week', 'month', 'all', 'custom'];
 const MODES: { value: CalcMode; key: StringKey }[] = [
   { value: 'km', key: 'summary.calc.modeKm' },
   { value: 'amd', key: 'summary.calc.modeAmd' },
 ];
-// A tile value has a unit when it has anything besides digits, spaces and
-// separators; checked this way (not [A-Za-z]) so "км" and "կմ" split too.
-const HAS_UNIT = /[^\d\s.,\u2212-]/;
-// Half a year of bars fits a 360dp phone with readable month names; a dozen
-// refuels is a few months of prices without crowding the dots.
-const TREND_MONTHS = 6;
-const TREND_POINTS = 12;
-
-type Spend = RefuelEntry | ServiceEntry | ExpenseEntry;
+// A tile value has a unit when it has letters ("km", "AMD", "L"); "—" and
+// bare counts do not.
+const HAS_UNIT = /[A-Za-z]/;
 
 export function SummaryScreen({
   onEdit,
@@ -148,12 +114,10 @@ export function SummaryScreen({
       }),
     [entries, inPeriod, now],
   );
-  const spending = useMemo(
-    () => sortNewestFirst(inPeriod).filter((e): e is Spend => e.kind === 'refuel' || isCost(e)),
+  const refuels = useMemo(
+    () => sortNewestFirst(inPeriod).filter((e): e is RefuelEntry => e.kind === 'refuel'),
     [inPeriod],
   );
-  const stations = useMemo(() => stationStats(entries, from, to), [entries, from, to]);
-  const grades = useMemo(() => gradeStats(entries, from, to), [entries, from, to]);
 
   const tiles: { label: string; value: string; accent?: boolean; full?: boolean }[] = [
     { label: t('summary.tile.driven'), value: formatKm(total.distanceKm) },
@@ -162,8 +126,6 @@ export function SummaryScreen({
     { label: t('summary.tile.refuels'), value: String(total.refuels) },
     { label: t('summary.tile.fuel'), value: formatLiters(total.liters) },
     { label: t('summary.tile.spent'), value: formatAmd(total.spentAmd) },
-    { label: t('summary.tile.other'), value: formatAmd(total.otherAmd) },
-    { label: t('summary.tile.total'), value: formatAmd(total.spentAmd + total.otherAmd) },
     {
       label: t('summary.tile.driveCost'),
       value: cost ? formatAmd(cost.amd) : '—',
@@ -259,7 +221,6 @@ export function SummaryScreen({
           const [num, unit] = HAS_UNIT.test(tile.value) ? splitUnit(tile.value) : [tile.value, ''];
           return (
             <View key={tile.label} style={[styles.tile, tile.full && styles.tileFull]}>
-              {/* Shrinks rather than wraps: some translations are longer than a half tile. */}
               <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit>
                 {tile.label}
               </Text>
@@ -274,8 +235,6 @@ export function SummaryScreen({
 
       <Calculator entries={entries} />
 
-      <MonthCard entries={entries} now={now} />
-
       {days.length > 0 ? (
         <>
           <Text style={[styles.label, styles.section]}>{t('summary.byDay')}</Text>
@@ -288,17 +247,15 @@ export function SummaryScreen({
                   </Text>
                   <Text style={styles.dayKm}>{formatKm(d.summary.distanceKm)}</Text>
                 </View>
-                {d.summary.rangeUsedKm > 0 || d.summary.spentAmd + d.summary.otherAmd > 0 ? (
+                {d.summary.rangeUsedKm > 0 || d.summary.spentAmd > 0 ? (
                   <View style={styles.dayMore}>
                     {d.summary.rangeUsedKm > 0 ? (
                       <Text style={styles.dayUsed}>
                         {t('summary.dayRange', { km: formatKm(d.summary.rangeUsedKm) })}
                       </Text>
                     ) : null}
-                    {d.summary.spentAmd + d.summary.otherAmd > 0 ? (
-                      <Text style={styles.daySpent}>
-                        {formatAmd(d.summary.spentAmd + d.summary.otherAmd)}
-                      </Text>
+                    {d.summary.spentAmd > 0 ? (
+                      <Text style={styles.daySpent}>{formatAmd(d.summary.spentAmd)}</Text>
                     ) : null}
                   </View>
                 ) : null}
@@ -310,12 +267,10 @@ export function SummaryScreen({
         <Text style={styles.empty}>{t('summary.empty')}</Text>
       )}
 
-      <View style={styles.sectionHead}>
-        <Text style={[styles.label, styles.section]}>{t('summary.spending')}</Text>
-      </View>
-      {spending.length > 0 ? (
+      <Text style={[styles.label, styles.section]}>{t('summary.spending')}</Text>
+      {refuels.length > 0 ? (
         <View style={styles.list}>
-          {spending.map((e, i) => (
+          {refuels.map((e, i) => (
             <Tap
               key={e.id}
               onPress={() => onEdit(e)}
@@ -323,23 +278,14 @@ export function SummaryScreen({
               accessibilityHint={t('summary.entryHint')}
               style={[styles.refuelRow, i > 0 && styles.divider]}
             >
-              {e.kind === 'refuel' ? (
-                <DropIcon />
-              ) : e.kind === 'service' ? (
-                <ServiceBadge />
-              ) : (
-                <ExpenseBadge />
-              )}
+              <DropIcon />
               <View style={styles.refuelBody}>
                 <Text style={styles.refuelWhen}>
                   {dayLabel(dayKey(e.at), now)} · {formatTime(e.at)}
                 </Text>
-                <Text style={styles.refuelMain}>{spendMain(e)}</Text>
-                {spendDetail(e) ? (
-                  <Text style={styles.refuelStation} numberOfLines={1}>
-                    {spendDetail(e)}
-                  </Text>
-                ) : null}
+                <Text style={styles.refuelMain}>
+                  {formatLiters(e.liters)} · {formatAmd(e.priceAmd)}
+                </Text>
               </View>
               <ChevronIcon />
             </Tap>
@@ -351,210 +297,7 @@ export function SummaryScreen({
       <Tap onPress={onAddRefuel} accessibilityRole="button" style={styles.addRefuel}>
         <Text style={styles.addRefuelText}>{t('summary.addRefuel')}</Text>
       </Tap>
-
-      {stations.length > 0 ? (
-        <>
-          <Text style={[styles.label, styles.section]}>{t('stats.stations')}</Text>
-          <GroupTable
-            rows={stations.map((g) => ({ ...g, title: g.name ?? t('stats.noStation') }))}
-            now={now}
-          />
-        </>
-      ) : null}
-      {grades.length > 0 ? (
-        <>
-          <Text style={[styles.label, styles.section]}>{t('stats.grades')}</Text>
-          <GroupTable
-            rows={grades.map((g) => ({
-              ...g,
-              title: g.grade ? gradeLabel(g.grade) : t('stats.noGrade'),
-            }))}
-            now={now}
-          />
-        </>
-      ) : null}
-
-      <Trends entries={entries} now={now} />
     </ScrollView>
-  );
-}
-
-/** Refuel: "30 L · 15 000 AMD"; service or expense: "Oil change · 25 000 AMD". */
-function spendMain(e: Spend): string {
-  if (e.kind === 'refuel') return `${formatLiters(e.liters)} · ${formatAmd(e.priceAmd)}`;
-  const label = e.kind === 'service' ? serviceLabel(e.category) : expenseLabel(e.category);
-  return `${label} · ${formatAmd(entryAmd(e) ?? 0)}`;
-}
-
-/** The muted line: station for a refuel, kind and workshop for a service, kind for an expense. */
-function spendDetail(e: Spend): string {
-  if (e.kind === 'refuel') return stationLine(e);
-  const parts = [t(e.kind === 'service' ? 'kinds.service' : 'kinds.expense')];
-  if (e.kind === 'service' && e.place) parts.push(e.place);
-  return parts.join(' · ');
-}
-
-/**
- * The calendar month's spending against the two budgets. Always the current
- * month (see the header); a missing budget still shows what was spent and
- * where the pace is heading.
- */
-function MonthCard({ entries, now }: { entries: Entry[]; now: number }) {
-  const fuelBudget = useSettings((s) => s.fuelBudget);
-  const expenseBudget = useSettings((s) => s.expenseBudget);
-  const spent = useMemo(() => {
-    const [from, to] = monthBounds(now);
-    return spendingIn(entries, from, to);
-  }, [entries, now]);
-  const fuel = budgetStatus(spent.fuelAmd, fuelBudget);
-  const other = budgetStatus(spent.otherAmd, expenseBudget);
-
-  return (
-    <>
-      <Text style={[styles.label, styles.section]}>{t('stats.month.title')}</Text>
-      <View style={styles.calc}>
-        <BudgetRow
-          label={t('stats.budget.fuel')}
-          spent={spent.fuelAmd}
-          status={fuel}
-          forecast={monthForecast(spent.fuelAmd, now)}
-        />
-        <View style={styles.hr} />
-        <BudgetRow
-          label={t('stats.budget.expenses')}
-          spent={spent.otherAmd}
-          status={other}
-          forecast={monthForecast(spent.otherAmd, now)}
-        />
-        {!fuel && !other ? <Text style={styles.calcNote}>{t('stats.budget.hint')}</Text> : null}
-      </View>
-    </>
-  );
-}
-
-function BudgetRow({
-  label,
-  spent,
-  status,
-  forecast,
-}: {
-  label: string;
-  spent: number;
-  status: ReturnType<typeof budgetStatus>;
-  forecast: number | undefined;
-}) {
-  // A forecast past the budget is a warning before the money is gone.
-  const forecastOver =
-    status !== undefined && forecast !== undefined && forecast > status.budgetAmd;
-  return (
-    <View style={styles.budget}>
-      <View style={styles.budgetTop}>
-        <Text style={styles.budgetLabel} numberOfLines={1}>
-          {label}
-        </Text>
-        <Text numberOfLines={1} adjustsFontSizeToFit style={styles.budgetFigures}>
-          <Text style={[styles.budgetSpent, status?.over && { color: colors.danger }]}>
-            {formatAmd(spent)}
-          </Text>
-          {status ? <Text style={styles.budgetOf}> / {formatAmd(status.budgetAmd)}</Text> : null}
-        </Text>
-      </View>
-      {status ? (
-        <View style={styles.bar}>
-          <View
-            style={[
-              styles.barFill,
-              {
-                width: `${Math.min(1, status.ratio) * 100}%`,
-                backgroundColor: status.over ? colors.danger : colors.accent,
-              },
-            ]}
-          />
-        </View>
-      ) : null}
-      <View style={styles.budgetBottom}>
-        <Text style={[styles.budgetNote, status?.over && { color: colors.danger }]}>
-          {!status
-            ? t('stats.budget.noBudget')
-            : status.over
-              ? t('stats.budget.over', { amd: formatAmd(-status.leftAmd) })
-              : t('stats.budget.left', { amd: formatAmd(status.leftAmd) })}
-        </Text>
-        <Text style={[styles.budgetNote, forecastOver && { color: colors.danger }]}>
-          {/* Nothing spent has no pace: "too early" on the 20th would be wrong, so say nothing. */}
-          {forecast !== undefined
-            ? t('stats.forecast', { amd: formatAmd(forecast) })
-            : spent > 0
-              ? t('stats.forecast.early')
-              : ''}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-/** Stations or grades: name and money on top, count, litres, AMD/L and last date under. */
-function GroupTable({ rows, now }: { rows: (RefuelGroup & { title: string })[]; now: number }) {
-  return (
-    <View style={styles.list}>
-      {rows.map((r, i) => (
-        <View key={`${i}-${r.title}`} style={[styles.dayRow, i > 0 && styles.divider]}>
-          <View style={styles.dayTop}>
-            <Text style={styles.dayLabel} numberOfLines={1}>
-              {r.title}
-            </Text>
-            <Text style={styles.dayKm}>{formatAmd(r.amd)}</Text>
-          </View>
-          <Text style={styles.groupDetail} numberOfLines={2}>
-            {[
-              plural('stats.refuels', r.refuels),
-              formatLiters(r.liters),
-              r.amdPerL !== undefined ? t('summary.perLiter', { amd: formatAmd(r.amdPerL) }) : '',
-              t('stats.last', { day: dayLabel(dayKey(r.lastAt), now) }),
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-/** Monthly spending bars, then price and km per litre over the last refuels. */
-function Trends({ entries, now }: { entries: Entry[]; now: number }) {
-  const months = useMemo(() => monthlySpending(entries, now, TREND_MONTHS), [entries, now]);
-  const prices = useMemo(
-    () =>
-      pricePerLiterPoints(entries)
-        .slice(-TREND_POINTS)
-        .map((p) => p.amdPerL),
-    [entries],
-  );
-  const kmPerL = useMemo(
-    () =>
-      kmPerLiterPoints(entries)
-        .slice(-TREND_POINTS)
-        .map((p) => p.kmPerL),
-    [entries],
-  );
-  return (
-    <>
-      <Text style={[styles.label, styles.section]}>{t('stats.trends')}</Text>
-      <MonthBars months={months} />
-      <TrendLine
-        title={t('stats.chart.price')}
-        values={prices}
-        format={(n) => t('summary.perLiter', { amd: formatAmd(n) })}
-        empty={t('stats.chart.notEnough')}
-      />
-      <TrendLine
-        title={t('stats.chart.kmPerL')}
-        values={kmPerL}
-        format={(n) => t('stats.chart.kmPerLValue', { n: Math.round(n * 10) / 10 })}
-        empty={t('stats.chart.kmPerLNotEnough')}
-      />
-    </>
   );
 }
 
@@ -704,7 +447,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   section: { marginTop: spacing.sm, marginBottom: -spacing.sm },
-  sectionHead: { flexDirection: 'row', alignItems: 'center' },
   rangeRow: { flexDirection: 'row', gap: spacing.md },
   rangeCol: { flex: 1, gap: 6, minWidth: 0 },
   stepper: {
@@ -893,7 +635,6 @@ const styles = StyleSheet.create({
   refuelBody: { flex: 1, gap: 2 },
   refuelWhen: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontWeight: '600' },
   refuelMain: { color: colors.text, fontFamily: fonts.num, fontSize: 16, fontWeight: '600' },
-  refuelStation: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontWeight: '500' },
   addRefuel: {
     minHeight: TOUCH,
     borderRadius: radius.md,
@@ -904,43 +645,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: -spacing.sm,
   },
-  groupDetail: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontWeight: '500' },
-  budget: { gap: spacing.sm },
-  budgetTop: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  budgetLabel: {
-    color: colors.text,
-    fontFamily: fonts.ui,
-    fontSize: 15,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  budgetFigures: { flexShrink: 1, textAlign: 'right' },
-  budgetSpent: {
-    color: colors.text,
-    fontFamily: fonts.num,
-    fontSize: 17,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  budgetOf: { color: colors.muted, fontFamily: fonts.num, fontSize: 13, fontWeight: '500' },
-  bar: {
-    height: 8,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface2,
-    overflow: 'hidden',
-  },
-  barFill: { height: '100%', borderRadius: radius.pill },
-  budgetBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    flexWrap: 'wrap',
-  },
-  budgetNote: { color: colors.muted, fontFamily: fonts.ui, fontSize: 13, fontWeight: '500' },
   addRefuelText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
 });

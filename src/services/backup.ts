@@ -11,11 +11,16 @@
  *
  * ── AFTER EVERY CHANGE ───────────────────────────────────────────────────
  *
- * The log, chats and settings stores are watched; any change schedules one
- * write a moment later (so typing a chat or a burst of edits is one file, not
- * twenty). Writes are serialised: a new file is created first, and only once
+ * The log and the consumption setting are watched; any change schedules one
+ * write a moment later (so a burst of edits is one file, not twenty). Writes are serialised: a new file is created first, and only once
  * it is fully written are the older backup files deleted, so a crash
  * mid-write never leaves the folder with nothing.
+ *
+ * ── THE 1.7.x SAFETY COPY ────────────────────────────────────────────────
+ *
+ * On the first run after updating from 1.7.x, the data 2.0 dropped is written
+ * once as `fuel-log-pre-2.0.json` (see `lib/legacy`), before any regular
+ * backup, as soon as a folder is known. The regular backups never delete it.
  */
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -33,11 +38,10 @@ import {
   staleBackups,
   type Backup,
 } from '../lib/backup';
-import { resolveModel } from '../lib/models';
-import { useChats } from '../state/chats';
+import { LEGACY_FILE_NAME, legacyBackup } from '../lib/legacy';
+import { markLegacyWritten, readLegacy } from '../state/legacyStorage';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
-import { saveApiKey } from './secrets';
 
 const DEBOUNCE_MS = 1500;
 
@@ -46,17 +50,9 @@ function appVersion(): string {
 }
 
 function currentBackup(now: number): Backup {
-  const s = useSettings.getState();
   return buildBackup({
     entries: useLog.getState().entries,
-    chats: useChats.getState().chats,
-    settings: {
-      consumption: s.consumption,
-      geminiModel: s.geminiModel,
-      fuelBudget: s.fuelBudget,
-      expenseBudget: s.expenseBudget,
-    },
-    apiKey: s.apiKey,
+    settings: { consumption: useSettings.getState().consumption },
     appVersion: appVersion(),
     now,
   });
@@ -84,9 +80,23 @@ export function backupNow(): Promise<boolean> {
   return run;
 }
 
+/** Writes the pending 1.7.x copy, if any, into `dir`. Failing leaves it pending for next time. */
+async function writeLegacyCopy(dir: string): Promise<void> {
+  const record = await readLegacy();
+  if (!record || record.written) return;
+  try {
+    const uri = await SAF.createFileAsync(dir, LEGACY_FILE_NAME, 'application/json');
+    await SAF.writeAsStringAsync(uri, legacyBackup(record.blobs, Date.now()));
+    await markLegacyWritten();
+  } catch {
+    // Folder gone or unwritable: the regular backup reports that; retried next time.
+  }
+}
+
 async function writeOnce(): Promise<boolean> {
   const dir = useSettings.getState().backupDirUri;
   if (!dir) return false;
+  await writeLegacyCopy(dir);
   const now = Date.now();
   const name = backupFileName(now);
   try {
@@ -124,18 +134,11 @@ function schedule() {
 
 /** Starts watching the stores. Call once, after they have hydrated. */
 export function startAutoBackup(): () => void {
+  const dir = useSettings.getState().backupDirUri;
+  if (dir) chain = chain.then(() => writeLegacyCopy(dir));
   const unsubs = [
     useLog.subscribe((s, p) => s.entries !== p.entries && schedule()),
-    useChats.subscribe((s, p) => s.chats !== p.chats && schedule()),
-    useSettings.subscribe(
-      (s, p) =>
-        (s.consumption !== p.consumption ||
-          s.fuelBudget !== p.fuelBudget ||
-          s.expenseBudget !== p.expenseBudget ||
-          s.geminiModel !== p.geminiModel ||
-          s.apiKey !== p.apiKey) &&
-        schedule(),
-    ),
+    useSettings.subscribe((s, p) => s.consumption !== p.consumption && schedule()),
   ];
   return () => unsubs.forEach((u) => u());
 }
@@ -160,22 +163,17 @@ export async function pickBackupFile(): Promise<PickedBackup> {
 /** Applies a checked backup. Returns the counts for the confirmation. */
 export async function applyBackup(b: Backup, mode: 'merge' | 'replace') {
   const log = useLog.getState();
-  const chats = useChats.getState();
   let added = b.entries.length;
   let updated = 0;
   if (mode === 'replace') {
     log.setAll(b.entries);
-    chats.setAll(b.chats);
   } else {
     const m = mergeById(log.entries, b.entries);
     log.setAll(m.items);
-    chats.setAll(mergeById(chats.chats, b.chats).items);
     added = m.added;
     updated = m.updated;
   }
   const s = useSettings.getState();
-  const next = importedSettings(s, b.settings, mode);
-  s.set({ ...next, geminiModel: resolveModel(next.geminiModel) });
-  if (b.geminiApiKey && (mode === 'replace' || !s.apiKey)) await saveApiKey(b.geminiApiKey);
+  s.set(importedSettings(s, b.settings, mode));
   return { added, updated, total: useLog.getState().entries.length };
 }

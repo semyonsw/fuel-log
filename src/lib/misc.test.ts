@@ -1,73 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendMessage, chatTitle, newChat, sanitizeChats, sortChats, updateMessage } from './chat';
-import { emptyProposal } from './assistant';
 import { draftFromEntry, draftFromTrack, emptyDraft, validateDraft } from './draft';
 import { at, reading, realNotes, refuel, trip } from './entries.fixtures';
-import { availableModels, DEFAULT_MODEL, GEMINI_MODELS, resolveModel } from './models';
 import { guessEnds, guessPlace } from './placeGuess';
 import { sanitizeEntries } from './sanitize';
 import { rangeSpark } from './spark';
-import { lastAddressFor, stationLine, suggestStations } from './stations';
-import type { RefuelEntry } from '../types';
 
-const station = (id: string, when: number, name: string, address?: string): RefuelEntry => ({
-  ...refuel(id, when, 30, 15000),
-  station: name,
-  ...(address ? { address } : {}),
-});
-
-describe('stations', () => {
-  const log = [
-    station('a', at(1, 9, 0), 'max petrol', 'Komitas 5'),
-    station('b', at(5, 9, 0), 'Max Petrol'),
-    station('c', at(3, 9, 0), 'Flash', 'Arshakunyats 40'),
-    station('d', at(8, 9, 0), 'Max Petrol', 'Bagrevand 2'),
-  ];
-
-  it('suggests most used first, newest spelling, prefix matches first', () => {
-    expect(suggestStations(log, '')).toEqual(['Max Petrol', 'Flash']);
-    expect(suggestStations(log, 'fl')).toEqual(['Flash']);
-    expect(suggestStations(log, 'a')).toEqual(['Max Petrol', 'Flash']);
-  });
-
-  it('does not suggest what is already typed exactly', () => {
-    expect(suggestStations(log, 'flash')).toEqual([]);
-  });
-
-  it('fills the address used most recently with that station', () => {
-    expect(lastAddressFor(log, 'MAX PETROL ')).toBe('Bagrevand 2');
-    expect(lastAddressFor(log, 'Flash')).toBe('Arshakunyats 40');
-    expect(lastAddressFor(log, 'Shell')).toBeUndefined();
-    expect(lastAddressFor(log, '')).toBeUndefined();
-  });
-
-  it('station line joins only what exists', () => {
-    expect(stationLine({ ...station('x', 0, 'Flash', 'Komitas 5'), grade: '95' })).toBe(
-      'Flash · Komitas 5 · Premium 95',
-    );
-    expect(stationLine(refuel('y', 0, 1, 1))).toBe('');
-  });
-});
-
-describe('refuel draft with station, address, grade', () => {
+describe('refuel draft', () => {
   const now = at(16, 9, 0);
-  it('saves trimmed optional fields and the grade', () => {
-    const d = {
-      ...emptyDraft('refuel', now),
-      liters: '30',
-      price: '15 000',
-      station: '  Max  Petrol ',
-      address: 'Komitas 5',
-      grade: '92' as const,
-    };
-    const r = validateDraft(d, 'f');
-    expect(r.ok && r.entry).toMatchObject({
-      station: 'Max Petrol',
-      address: 'Komitas 5',
-      grade: '92',
-    });
-  });
 
   it('blank optional fields are not saved', () => {
     const r = validateDraft({ ...emptyDraft('refuel', now), liters: '30', price: '15000' }, 'f');
@@ -81,20 +21,14 @@ describe('refuel draft with station, address, grade', () => {
   });
 
   it('a trip never takes refuel fields', () => {
-    const d = {
-      ...emptyDraft('trip', now),
-      from: 'a',
-      to: 'b',
-      station: 'Flash',
-      grade: '95' as const,
-    };
+    const d = { ...emptyDraft('trip', now), from: 'a', to: 'b', liters: '30', price: '15000' };
     const r = validateDraft(d, 't');
-    expect(r.ok && r.entry).not.toHaveProperty('station');
-    expect(r.ok && r.entry).not.toHaveProperty('grade');
+    expect(r.ok && r.entry).not.toHaveProperty('liters');
+    expect(r.ok && r.entry).not.toHaveProperty('priceAmd');
   });
 
   it('round-trips through the form', () => {
-    const e = { ...station('f', now, 'Flash', 'Komitas 5'), grade: 'diesel' as const };
+    const e = { ...refuel('f', now, 30, 15000, 400), note: 'full' };
     const r = validateDraft(draftFromEntry(e), 'f');
     expect(r.ok && r.entry).toEqual(e);
   });
@@ -152,7 +86,7 @@ describe('guessPlace', () => {
 });
 
 describe('sanitizeEntries (old data, new fields)', () => {
-  it('entries saved before tracks/stations existed load unchanged', () => {
+  it('entries saved before tracks existed load unchanged', () => {
     const old = JSON.parse(JSON.stringify(realNotes));
     expect(sanitizeEntries(old)).toEqual(realNotes);
   });
@@ -165,136 +99,6 @@ describe('sanitizeEntries (old data, new fields)', () => {
   it('a good track is kept', () => {
     const good = trip('t', 0, 'a', 'b', { track: [{ lat: 1, lon: 2, t: 3 }] });
     expect(sanitizeEntries([good])).toEqual([good]);
-  });
-});
-
-describe('chat', () => {
-  it('titles from the first user words; photo-only start reads as a photo', () => {
-    expect(chatTitle([{ id: '1', role: 'user', text: '  how much  this month? ', at: 0 }])).toBe(
-      'how much this month?',
-    );
-    expect(chatTitle([{ id: '1', role: 'user', text: '', at: 0, hasPhoto: true }])).toBe(
-      'Dashboard photo',
-    );
-    expect(chatTitle([])).toBe('New chat');
-    expect(chatTitle([{ id: '1', role: 'user', text: 'x'.repeat(60), at: 0 }])).toHaveLength(40);
-  });
-
-  it('append sets title once and bumps updatedAt', () => {
-    let c = newChat('c', 1);
-    c = appendMessage(c, { id: 'a', role: 'user', text: 'first', at: 2 });
-    c = appendMessage(c, { id: 'b', role: 'user', text: 'second', at: 3 });
-    expect(c).toMatchObject({ title: 'first', updatedAt: 3 });
-    expect(c.messages).toHaveLength(2);
-  });
-
-  it('edited proposals and the saved mark are stored on that message', () => {
-    const p = { ...emptyProposal('reading'), rangeKm: 1 };
-    let c = appendMessage(newChat('c', 1), {
-      id: 'm',
-      role: 'model',
-      text: '',
-      at: 2,
-      proposals: [p],
-    });
-    c = updateMessage(c, 'm', { proposals: [{ ...p, rangeKm: 2 }] });
-    c = updateMessage(c, 'm', { savedIds: ['e1'] });
-    expect(c.messages[0]).toMatchObject({ proposals: [{ rangeKm: 2 }], savedIds: ['e1'] });
-  });
-
-  it('old chats with a photo reading load with a card instead', () => {
-    const old = {
-      ...newChat('c', 1),
-      messages: [
-        {
-          id: 'm',
-          role: 'model',
-          text: 'x',
-          at: 2,
-          reading: { rangeKm: 54, tripKm: null, clock: null },
-        },
-      ],
-    };
-    const [c] = sanitizeChats([old]);
-    expect(c.messages[0]).not.toHaveProperty('reading');
-    expect(c.messages[0].proposals).toEqual([{ ...emptyProposal('reading'), rangeKm: 54 }]);
-  });
-
-  it('chats saved before edits and deletes still load: their proposals are adds', () => {
-    const old = {
-      ...newChat('c', 1),
-      messages: [
-        {
-          id: 'm',
-          role: 'model',
-          text: 'x',
-          at: 2,
-          proposals: [{ kind: 'refuel', liters: 15, priceAmd: 9000, clock: '18:40' }],
-          savedIds: ['e1'],
-        },
-      ],
-    };
-    const [c] = sanitizeChats([old]);
-    expect(c.messages[0].proposals).toEqual([
-      { ...emptyProposal('refuel'), liters: 15, priceAmd: 9000, clock: '18:40' },
-    ]);
-    expect(c.messages[0].savedIds).toEqual(['e1']);
-  });
-
-  it('an edit card keeps its target and the entry it was', () => {
-    const before = { ...emptyProposal('refuel'), liters: 20 };
-    const { op: _op, target: _t, before: _b, ...values } = before;
-    const edit = { ...before, op: 'update', target: 'f1', liters: 30, before: values };
-    const [c] = sanitizeChats([
-      {
-        ...newChat('c', 1),
-        messages: [{ id: 'm', role: 'model', text: '', at: 2, proposals: [edit] }],
-      },
-    ]);
-    expect(c.messages[0].proposals![0]).toMatchObject({
-      op: 'update',
-      target: 'f1',
-      liters: 30,
-      before: { liters: 20 },
-    });
-  });
-
-  it('sorts newest first; sanitises junk', () => {
-    const a = { ...newChat('a', 1), updatedAt: 5 };
-    const b = { ...newChat('b', 2), updatedAt: 9 };
-    expect(sortChats([a, b]).map((c) => c.id)).toEqual(['b', 'a']);
-    expect(sanitizeChats([a, null, { id: 1 }, { ...b, messages: [{ id: 'x' }] }])).toEqual([
-      a,
-      { ...b, messages: [] },
-    ]);
-  });
-});
-
-describe('models', () => {
-  it('offers only current models, none of the retired ones', () => {
-    const ids = GEMINI_MODELS.map((m) => m.id);
-    for (const old of ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-3-pro-preview']) {
-      expect(ids).not.toContain(old);
-    }
-  });
-
-  it('hides offered models the key cannot use', () => {
-    const listed = [
-      { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
-      { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['embedContent'] },
-      { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
-    ];
-    expect(availableModels(listed).map((m) => m.id)).toEqual(['gemini-3.8-flash']);
-  });
-
-  it('keeps the full list when the listing fails or matches nothing', () => {
-    expect(availableModels(undefined)).toEqual(GEMINI_MODELS);
-    expect(availableModels([{ name: 'models/other' }])).toEqual(GEMINI_MODELS);
-  });
-
-  it('an unknown stored model falls back to the default', () => {
-    expect(resolveModel('gemini-2.0-flash')).toBe(DEFAULT_MODEL);
-    expect(resolveModel('gemini-3.8-flash')).toBe('gemini-3.8-flash');
   });
 });
 

@@ -139,7 +139,7 @@ export const Field = forwardRef<
     error?: string;
     /** Rendered at the right of the label row, e.g. a remove button. */
     accessory?: ReactNode;
-    /** A small amber tag after the label: where a pre-filled value came from ("from photo"). */
+    /** A small amber tag after the label: where a pre-filled value came from ("from GPS"). */
     marker?: string;
     /** Number fields use the mono figures; text fields the UI face. */
     numeric?: boolean;

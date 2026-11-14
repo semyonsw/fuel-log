@@ -78,10 +78,10 @@ aapt2 dump badging <apk> | grep permission                     # see expected li
 ```
 
 The manifest merger takes the union of every library's permissions, so the only
-honest permission check reads the built file. Expected since 1.1.0: INTERNET,
+honest permission check reads the built file. Expected since 2.0.0: INTERNET,
 VIBRATE, ACCESS_FINE/COARSE_LOCATION, ACCESS_BACKGROUND_LOCATION,
-FOREGROUND_SERVICE(_LOCATION), POST_NOTIFICATIONS, CAMERA, plus library
-housekeeping (WAKE_LOCK, ACCESS_NETWORK_STATE, RECEIVE_BOOT_COMPLETED…).
+FOREGROUND_SERVICE(_LOCATION), POST_NOTIFICATIONS, plus library housekeeping
+(WAKE_LOCK, ACCESS_NETWORK_STATE…). No CAMERA: the AI photo feature is gone.
 RECORD_AUDIO is blocked in app.json.
 
 To prove the JS that shipped is the JS you wrote, grep the bundle inside the APK

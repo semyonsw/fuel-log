@@ -3,7 +3,7 @@
  *
  * The row badges (gauge, fuel drop) are plain Views with borders and a
  * rotation, as before; they sit inside a round badge so every row kind has
- * the same left edge. Line icons (tabs, AI, camera…) are SVG paths on a 24
+ * the same left edge. Line icons (tabs, plus, map controls…) are SVG paths on a 24
  * grid, stroked in `currentColor`-style via a `color` prop, because emoji
  * render in full colour and differ per phone maker.
  */
@@ -33,24 +33,6 @@ export function DropIcon({ color = colors.accent }: { color?: string }) {
 }
 
 type IconProps = { color?: string; size?: number };
-
-/** A wrench in the round row badge. Marks a service. */
-export function ServiceBadge({ color = colors.accent }: { color?: string }) {
-  return (
-    <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
-      <WrenchIcon size={18} color={color} width={2} />
-    </View>
-  );
-}
-
-/** A wallet in the round row badge. Marks any other expense. */
-export function ExpenseBadge({ color = colors.muted }: { color?: string }) {
-  return (
-    <View style={styles.badge}>
-      <WalletIcon size={18} color={color} width={2} />
-    </View>
-  );
-}
 
 function Line({
   size = 24,
@@ -115,26 +97,6 @@ export function PlusIcon({ size = 26, color = colors.onAccent }: IconProps) {
   );
 }
 
-/** Three four-point sparkles: the AI. Filled so it reads at a glance on the button. */
-export function SparklesIcon({ size = 28, color = colors.onAccent }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M10 2.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"
-        fill={color}
-      />
-      <Path
-        d="M18.5 13c.3 2 1.3 3 3.3 3.3-2 .3-3 1.3-3.3 3.3-.3-2-1.3-3-3.3-3.3 2-.3 3-1.3 3.3-3.3z"
-        fill={color}
-      />
-      <Path
-        d="M6 16.5c.2 1.4.9 2.1 2.3 2.3-1.4.2-2.1.9-2.3 2.3-.2-1.4-.9-2.1-2.3-2.3 1.4-.2 2.1-.9 2.3-2.3z"
-        fill={color}
-      />
-    </Svg>
-  );
-}
-
 /**
  * The fuel pump from the app icon (amber pump, dark window), redrawn on the 24
  * grid so the refuel button reads as "the app's own fuel thing" at a glance.
@@ -160,74 +122,6 @@ export function FuelPumpIcon({
       />
       <Rect x="18.75" y="4" width="2.75" height="4.4" rx="0.5" fill={color} />
     </Svg>
-  );
-}
-
-type StrokeProps = IconProps & { width?: number };
-
-/** A spanner, the universal "car service" sign. */
-export function WrenchIcon({ size = 24, color = colors.text, width }: StrokeProps) {
-  return (
-    <Line size={size} color={color} width={width}>
-      <Path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </Line>
-  );
-}
-
-/** A wallet with its clasp: money spent on the car that is not fuel. */
-export function WalletIcon({ size = 24, color = colors.text, width }: StrokeProps) {
-  return (
-    <Line size={size} color={color} width={width}>
-      <Rect x="3" y="6.5" width="18" height="13" rx="2" />
-      <Path d="M5.5 6.5l10-3a1 1 0 0 1 1.3 1v2" />
-      <Path d="M21 11h-3.5a1.75 1.75 0 0 0 0 3.5H21" />
-    </Line>
-  );
-}
-
-export function CameraIcon(p: IconProps) {
-  return (
-    <Line {...p}>
-      <Path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
-      <Circle cx="12" cy="13" r="3.6" />
-    </Line>
-  );
-}
-
-export function GalleryIcon(p: IconProps) {
-  return (
-    <Line {...p}>
-      <Rect x="3" y="4.5" width="18" height="15" rx="2" />
-      <Circle cx="8.5" cy="9.5" r="1.6" />
-      <Path d="M21 16l-5-5-8 8.5" />
-    </Line>
-  );
-}
-
-export function SendIcon({ size = 22, color = colors.onAccent }: IconProps) {
-  return (
-    <Line size={size} color={color} width={2.2}>
-      <Path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" />
-    </Line>
-  );
-}
-
-export function HistoryIcon(p: IconProps) {
-  return (
-    <Line {...p}>
-      <Path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
-      <Path d="M3 3.5V8h4.5" />
-      <Path d="M12 7.5V12l3 2" />
-    </Line>
-  );
-}
-
-export function KeyIcon(p: IconProps) {
-  return (
-    <Line {...p}>
-      <Circle cx="8" cy="14" r="4" />
-      <Path d="M11 11l8-8M16 6l2.5 2.5M14 8l2 2" />
-    </Line>
   );
 }
 
@@ -265,14 +159,6 @@ export function RecordIcon({ size = 20, color = colors.accent }: IconProps) {
       <Circle cx="10" cy="10" r="8" fill="none" stroke={color} strokeWidth={2} />
       <Circle cx="10" cy="10" r="4" fill={color} />
     </Svg>
-  );
-}
-
-export function TrashIcon(p: IconProps) {
-  return (
-    <Line {...p}>
-      <Path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" />
-    </Line>
   );
 }
 

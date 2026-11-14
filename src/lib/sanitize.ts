@@ -5,20 +5,21 @@
  * Two levels of "bad":
  *
  *  - A row missing what its kind is *about* is dropped: a refuel without
- *    positive liters, a reading without a range, a service or expense without
- *    a known category and an amount. Keeping it would put NaN into every
- *    summary that adds it up, which is worse than losing one row.
+ *    positive liters, a reading without a range. Keeping it would put NaN into
+ *    every summary that adds it up, which is worse than losing one row. Rows
+ *    of kinds this build no longer has (services and expenses, written by
+ *    1.7.x) are dropped the same way: the app no longer shows or counts them.
  *  - An optional field of the wrong type is dropped from its row and the row
  *    kept (the rest was typed and is still worth having): a malformed GPS
- *    track, a range that is not a number, a station that is not text. The
+ *    track, a range that is not a number. The
  *    screens call string methods and do arithmetic on these without checking,
  *    because everything written by the app itself is already well-formed.
  */
 
 import type { Entry, TrackPoint } from '../types';
-import { isExpenseCategory, isServiceCategory } from './categories';
 
-const GRADES = new Set(['92', '95', '98', 'diesel']);
+/** Refuel fields 1.7.x recorded and this build dropped; stripped so they do not ride along forever. */
+const RETIRED_REFUEL_KEYS = ['station', 'address', 'grade', 'odometerKm'];
 
 type Row = Record<string, unknown>;
 
@@ -57,20 +58,7 @@ function sanitizeEntry(raw: unknown): Entry | undefined {
     case 'refuel':
       // Zero liters would make price-per-litre infinite in every summary.
       if (!finite(r.liters) || r.liters <= 0 || !nonNegative(r.priceAmd)) return undefined;
-      keepIf(r, ['station', 'address'], isString);
-      keepIf(r, ['grade'], (g) => GRADES.has(g as string));
-      keepIf(r, ['odometerKm'], nonNegative);
-      return r as unknown as Entry;
-    case 'service':
-      if (!isServiceCategory(r.category) || !nonNegative(r.costAmd)) return undefined;
-      keepIf(r, ['place'], isString);
-      keepIf(r, ['odometerKm'], nonNegative);
-      keepIf(r, ['remindKm', 'remindMonths'], (v) => finite(v) && v > 0);
-      return r as unknown as Entry;
-    case 'expense':
-      // 0 is kept, not dropped: the form rounds to whole AMD, so a typed "0.4"
-      // is stored as 0, and a load must never delete what the app itself wrote.
-      if (!isExpenseCategory(r.category) || !nonNegative(r.amountAmd)) return undefined;
+      for (const k of RETIRED_REFUEL_KEYS) delete r[k];
       return r as unknown as Entry;
     default:
       return undefined;

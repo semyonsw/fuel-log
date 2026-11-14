@@ -6,43 +6,28 @@ replaces a running note in Samsung Notes with something that does the arithmetic
 
 ## Features
 
-- **Trips with stops.** Log a trip as a chain of places (home, work, shop, home).
-- **Range readings.** Record the dashboard's "km remaining" at the start and end
-  of a trip, or whenever you glance at it.
-- **Range used per trip,** computed automatically from the readings around it.
-- **Refuels** with liters, price in AMD and, optionally, the odometer.
-- **Remembered places,** so frequent stops are one tap instead of retyped.
-- **Today, weekly, monthly, all-time and custom-range summary** of trips, range
-  used, liters and money spent, with spending per day, plus the approximate
-  fuel cost of the period's driving (km × consumption × price per liter).
-- **Today on the Log:** km driven today and what that driving cost, under the
-  range.
-- **Spending history:** every refuel in the period, editable, plus "Add refuel"
-  for any past date. Refuels can record the station, its address and the grade.
+- **GPS trips.** Start on the Log, Stop when you arrive (keeps recording with
+  the screen off). The trip form opens with the route on a map (MapLibre +
+  OpenFreeMap, no key), its distance, and From/To guessed from earlier trips;
+  type the km left on the dashboard and save.
+- **Range used and cost per trip,** computed from the readings around it: the
+  drop in dashboard range, and its approximate cost in AMD (range used ÷ km per
+  litre × the price per litre of the latest refuel).
+- **Manual trips** as a chain of places (home, work, shop, home), with
+  remembered places so frequent stops are one tap.
+- **Range readings:** record the dashboard's "km remaining" on its own.
+- **Refuels** with litres, total price in AMD and, optionally, the range after.
+- **Today on the Log:** km driven today and what that driving cost.
+- **Summary** for today, this week, this month, all time or a custom range:
+  trips, km driven, range used, litres, AMD spent on refuels, the approximate
+  cost of the driving, spending per day, and every refuel in the period
+  (editable, plus "Add refuel" for a past date).
 - **Fuel calculator:** what a distance costs, or how far an amount takes you.
-- **GPS trips:** start/stop recording from the Log (keeps going with the screen
-  off), route on a map (MapLibre + OpenFreeMap, no key), distance from the track,
-  From/To guessed from earlier trips, approximate fuel cost per trip.
-- **Service log** (oil, repairs, tires, inspection) with reminders by date or by
-  km, whichever comes first; refuels can record the odometer so km reminders
-  follow real driving.
-- **Other expenses** by category: insurance, fines, taxes, parking, wash, tolls,
-  parts, accessories.
-- **Two monthly budgets,** fuel and everything else, with a month-end forecast.
-- **Charts and stats:** spending over time, plus per-station and per-grade figures.
-- **App-icon shortcuts:** long-press the icon to jump straight into a new entry.
-- **AI chat (Gemini):** say what happened ("bought 15 L for 9000 AMD, fuel was
-  15 km, now 250 km") or photograph the dashboard; the entries it implies appear
-  as editable cards and one Approve saves them to the log. It can add, edit or
-  delete any kind of entry, always as cards you approve; it knows today's date
-  and the log's exact totals, logs past dates ("yesterday I filled up…"), and
-  can check the log for anomalies. Several chats, with history; choice of
-  current Gemini models.
+- **Consumption:** derived from refuels, or type your car's L/100 km in Settings.
 - **Backup:** export/import one JSON file; auto-backup after every change into a
   folder you pick once (the newest file replaces the old one).
 
-Data stays on the phone (AsyncStorage). The network is used only for map tiles
-and the AI chat; everything else works offline.
+Data stays on the phone (AsyncStorage). The network is used only for map tiles.
 
 ## Development
 

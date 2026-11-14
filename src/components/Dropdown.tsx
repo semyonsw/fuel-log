@@ -1,17 +1,13 @@
 /**
- * Dropdowns for the form: a closed box showing the current value with a
- * chevron, and a list that opens directly underneath it.
- *
- *   Dropdown    pick one of a fixed set (fuel grade); no typing
- *   ComboField  a text field whose chevron opens the values used before
- *               (station, address, places), so a new value can still be typed
+ * ComboField: a text field whose chevron opens a list of the values used
+ * before (places), directly underneath it, so a new value can still be typed.
  *
  * The list opens INLINE, pushing the fields below it down, rather than as an
  * overlay: the form is one ScrollView, and an absolutely positioned panel
  * would be clipped by it or sit under the next field. It is its own nested
  * ScrollView capped at about five rows; a long name wraps instead of being
  * cut off, so fewer of those fit, which beats guessing between two truncated
- * addresses.
+ * names.
  *
  * Replaces the horizontal chip strips: with five place fields on a trip form
  * the strips turned the form into a wall of pills, and a chip row only shows
@@ -23,7 +19,7 @@ import { ScrollView, StyleSheet, Text, View, type TextInput } from 'react-native
 
 import { t } from '../i18n';
 import { normalizePlace } from '../lib/places';
-import { colors, fonts, radius, spacing, TOUCH, type } from '../theme';
+import { colors, radius, spacing, TOUCH, type } from '../theme';
 import { ChevronIcon } from './icons';
 import { Field, Tap } from './ui';
 
@@ -44,7 +40,7 @@ function OptionList({
   selected,
   onPick,
 }: {
-  options: { key: string; label: string; muted?: boolean }[];
+  options: { key: string; label: string }[];
   selected: (key: string) => boolean;
   onPick: (key: string) => void;
 }) {
@@ -67,66 +63,11 @@ function OptionList({
               accessibilityLabel={o.label}
               style={[styles.row, i > 0 && styles.rowRule, on && styles.rowOn]}
             >
-              <Text style={[styles.rowText, o.muted && styles.rowMuted, on && styles.rowTextOn]}>
-                {o.label}
-              </Text>
+              <Text style={[styles.rowText, on && styles.rowTextOn]}>{o.label}</Text>
             </Tap>
           );
         })}
       </ScrollView>
-    </View>
-  );
-}
-
-/** A fixed-choice dropdown. With `clearLabel`, a first row sets it back to nothing. */
-export function Dropdown<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  placeholder = t('form.choose'),
-  clearLabel,
-}: {
-  label: string;
-  value: T | undefined;
-  options: { value: T; label: string }[];
-  onChange: (v: T | undefined) => void;
-  placeholder?: string;
-  clearLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value);
-  // '' can't collide with a real value: an empty string is never an option.
-  const rows = [
-    ...(clearLabel ? [{ key: '', label: clearLabel, muted: true }] : []),
-    ...options.map((o) => ({ key: o.value as string, label: o.label })),
-  ];
-
-  return (
-    <View style={styles.wrap}>
-      <Text style={styles.label}>{label}</Text>
-      <Tap
-        onPress={() => setOpen((o) => !o)}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${current?.label ?? placeholder}`}
-        accessibilityState={{ expanded: open }}
-        style={[styles.box, open && styles.boxOpen]}
-      >
-        <Text style={[styles.boxText, !current && styles.placeholder]} numberOfLines={1}>
-          {current?.label ?? placeholder}
-        </Text>
-        <Chevron open={open} />
-      </Tap>
-      {open ? (
-        <OptionList
-          options={rows}
-          selected={(k) => (k === '' ? value === undefined : k === value)}
-          onPick={(k) => {
-            onChange(k === '' ? undefined : (k as T));
-            setOpen(false);
-          }}
-        />
-      ) : null}
     </View>
   );
 }
@@ -136,8 +77,6 @@ type ComboProps = Omit<ComponentProps<typeof Field>, 'value' | 'onChangeText' | 
   onChangeText: (v: string) => void;
   /** The remembered values for what's typed ('' = all of them), best first. */
   suggest: (query: string) => string[];
-  /** A row was picked; defaults to onChangeText. */
-  onPick?: (v: string) => void;
 };
 
 /**
@@ -148,7 +87,7 @@ type ComboProps = Omit<ComponentProps<typeof Field>, 'value' | 'onChangeText' | 
  * pull the row out from under the finger.
  */
 export const ComboField = forwardRef<TextInput, ComboProps>(function ComboField(
-  { value, onChangeText, suggest, onPick, onSubmitEditing, ...field },
+  { value, onChangeText, suggest, onSubmitEditing, ...field },
   ref,
 ) {
   const [open, setOpen] = useState(false);
@@ -199,7 +138,7 @@ export const ComboField = forwardRef<TextInput, ComboProps>(function ComboField(
           options={options.map((o) => ({ key: o, label: o }))}
           selected={(k) => normalizePlace(k).toLowerCase() === own}
           onPick={(k) => {
-            (onPick ?? onChangeText)(k);
+            onChangeText(k);
             setQuery('');
             setOpen(false);
           }}
@@ -211,23 +150,6 @@ export const ComboField = forwardRef<TextInput, ComboProps>(function ComboField(
 
 const styles = StyleSheet.create({
   wrap: { gap: spacing.xs + 2 },
-  label: { color: colors.muted, ...type.label },
-  // The closed box matches ui Field's input box, so a dropdown and a text
-  // field side by side read as the same kind of control.
-  box: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 56,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-  },
-  boxOpen: { borderColor: colors.accent },
-  boxText: { flex: 1, color: colors.text, fontFamily: fonts.ui, fontSize: 18 },
-  placeholder: { color: colors.muted },
   chevronTap: {
     width: TOUCH,
     height: TOUCH,
@@ -253,6 +175,5 @@ const styles = StyleSheet.create({
   rowRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   rowOn: { backgroundColor: colors.accentSoft },
   rowText: { color: colors.text, ...type.body },
-  rowMuted: { color: colors.muted },
   rowTextOn: { color: colors.accent, fontWeight: '600' },
 });

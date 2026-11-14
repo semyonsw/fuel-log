@@ -3,11 +3,8 @@
  *
  * ── WHAT IS IN IT ────────────────────────────────────────────────────────
  *
- * Entries, AI chats (text only — photos are never kept), the calculator's
- * remembered consumption, the two monthly budgets, the chosen model, and the
- * Gemini API key. The key
- * is in plain text because the user asked for a backup that restores a fresh
- * install completely; whoever has the file can use the key.
+ * Entries and the typed consumption. Files written by 1.7.x also carry AI
+ * chats, budgets, a model and an API key; this build reads past them.
  *
  * ── ONE FILE, ALWAYS THE NEWEST ──────────────────────────────────────────
  *
@@ -26,7 +23,6 @@
 
 import { t } from '../i18n';
 import type { Entry } from '../types';
-import { sanitizeChats, type Chat } from './chat';
 import { sanitizeEntries } from './sanitize';
 
 export const BACKUP_APP = 'fuel-log';
@@ -34,14 +30,6 @@ export const BACKUP_FORMAT = 1;
 
 export type BackupSettings = {
   consumption: string;
-  geminiModel: string;
-  /**
-   * Optional because files written before budgets existed have none, and
-   * "not in the file" must not read as "blank": importing such a file keeps
-   * the budgets the phone has, even in Replace mode.
-   */
-  fuelBudget?: string;
-  expenseBudget?: string;
 };
 
 export type Backup = {
@@ -50,16 +38,12 @@ export type Backup = {
   exportedAt: string;
   appVersion: string;
   entries: Entry[];
-  chats: Chat[];
   settings: BackupSettings;
-  geminiApiKey: string;
 };
 
 export function buildBackup(input: {
   entries: Entry[];
-  chats: Chat[];
   settings: BackupSettings;
-  apiKey: string;
   appVersion: string;
   now: number;
 }): Backup {
@@ -69,9 +53,7 @@ export function buildBackup(input: {
     exportedAt: new Date(input.now).toISOString(),
     appVersion: input.appVersion,
     entries: input.entries,
-    chats: input.chats,
     settings: input.settings,
-    geminiApiKey: input.apiKey,
   };
 }
 
@@ -105,37 +87,22 @@ export function parseBackup(text: string): ParsedBackup {
       exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '',
       appVersion: typeof o.appVersion === 'string' ? o.appVersion : '',
       entries: sanitizeEntries(o.entries),
-      chats: sanitizeChats(o.chats),
-      settings: {
-        consumption: typeof s.consumption === 'string' ? s.consumption : '',
-        geminiModel: typeof s.geminiModel === 'string' ? s.geminiModel : '',
-        ...(typeof s.fuelBudget === 'string' ? { fuelBudget: s.fuelBudget } : {}),
-        ...(typeof s.expenseBudget === 'string' ? { expenseBudget: s.expenseBudget } : {}),
-      },
-      geminiApiKey: typeof o.geminiApiKey === 'string' ? o.geminiApiKey : '',
+      settings: { consumption: typeof s.consumption === 'string' ? s.consumption : '' },
     },
   };
 }
 
 /**
  * The settings after an import. The file fills in what this phone does not
- * have; in Replace mode the file wins outright. A budget the file does not
- * carry at all (an export from before budgets) leaves the phone's alone in
- * either mode.
+ * have; in Replace mode the file wins outright.
  */
 export function importedSettings(
-  phone: Required<BackupSettings>,
+  phone: BackupSettings,
   file: BackupSettings,
   mode: 'merge' | 'replace',
-): Required<BackupSettings> {
-  const pick = (mine: string, theirs: string | undefined) =>
-    theirs === undefined ? mine : mode === 'replace' || !mine ? theirs : mine;
-  return {
-    consumption: pick(phone.consumption, file.consumption),
-    geminiModel: pick(phone.geminiModel, file.geminiModel),
-    fuelBudget: pick(phone.fuelBudget, file.fuelBudget),
-    expenseBudget: pick(phone.expenseBudget, file.expenseBudget),
-  };
+): BackupSettings {
+  const pick = (mine: string, theirs: string) => (mode === 'replace' || !mine ? theirs : mine);
+  return { consumption: pick(phone.consumption, file.consumption) };
 }
 
 /**

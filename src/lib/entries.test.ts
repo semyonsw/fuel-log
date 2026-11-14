@@ -1,14 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
-
-import { setLang } from '../i18n';
+import { describe, expect, it } from 'vitest';
 
 import {
-  entryAmd,
-  isCost,
   drivenKm,
   todayLine,
   tripRangeUsedKm,
   currentRangeKm,
+  nextRangeBaseline,
   dayKey,
   dayLabel,
   formatTime,
@@ -19,25 +16,6 @@ import {
   summarize,
 } from './entries';
 import { at, reading, realNotes, refuel, trip } from './entries.fixtures';
-import type { ExpenseEntry, ServiceEntry } from '../types';
-
-const service = (id: string, when: number, costAmd: number, rangeKm?: number): ServiceEntry => ({
-  id,
-  at: when,
-  kind: 'service',
-  category: 'oil',
-  costAmd,
-  ...(rangeKm !== undefined ? { rangeKm } : {}),
-});
-const expense = (id: string, when: number, amountAmd: number, rangeKm?: number): ExpenseEntry => ({
-  id,
-  at: when,
-  kind: 'expense',
-  category: 'parking',
-  amountAmd,
-  ...(rangeKm !== undefined ? { rangeKm } : {}),
-});
-
 /**
  * The derived numbers, checked against the real notes first and then against the
  * cases that would make them lie: a refuel in between, a dashboard that ticks up.
@@ -76,17 +54,6 @@ describe('rangeUsedById', () => {
 
   it('does not depend on input order', () => {
     expect(rangeUsedById([...realNotes].reverse())).toEqual(rangeUsedById(realNotes));
-  });
-
-  it('ignores services and expenses, even one that carries a range', () => {
-    const withCosts = [
-      ...realNotes,
-      service('s', at(15, 14, 0), 20000, 999),
-      expense('x', at(16, 9, 0), 500, 0),
-      expense('y', at(16, 10, 0), 300),
-    ];
-    expect(rangeUsedById(withCosts)).toEqual(rangeUsedById(realNotes));
-    expect(currentRangeKm([...realNotes, expense('z', at(17, 9, 0), 1, 5)])).toBe(54);
   });
 
   it('has no baseline for the first reading', () => {
@@ -147,6 +114,29 @@ describe('rangeUsedById', () => {
       refuel('f', at(15, 10, 0), 2, 1000, 55),
     ]);
     expect(used.size).toBe(0);
+  });
+});
+
+describe('nextRangeBaseline', () => {
+  it('is the latest reading, the same one rangeUsedById measures from', () => {
+    expect(nextRangeBaseline([])).toBeUndefined();
+    expect(nextRangeBaseline(realNotes)).toBe(currentRangeKm(realNotes));
+  });
+
+  it('a refuel without range after leaves no baseline; one with range is the new one', () => {
+    const base = [reading('a', at(1, 9, 0), 200)];
+    expect(nextRangeBaseline([...base, refuel('f', at(1, 10, 0), 30, 15000)])).toBeUndefined();
+    expect(
+      nextRangeBaseline([...base, { ...refuel('f', at(1, 10, 0), 30, 15000), rangeKm: 500 }]),
+    ).toBe(500);
+    // A later reading after the bare refuel starts a clean baseline again.
+    expect(
+      nextRangeBaseline([
+        ...base,
+        refuel('f', at(1, 10, 0), 30, 15000),
+        reading('b', at(1, 11, 0), 480),
+      ]),
+    ).toBe(480);
   });
 });
 
@@ -221,43 +211,34 @@ describe('summarize', () => {
       refuels: 0,
       liters: 0,
       spentAmd: 0,
-      services: 0,
-      expenses: 0,
-      otherAmd: 0,
     });
   });
 
   it('totals everything', () => {
     const entries = [...realNotes, refuel('f', at(16, 19, 0), 30, 15000, 400)];
+    // 22.5 + 23 (t2 has no distance: its range used, 106 → 83) + 14 + 9.5.
     expect(summarize(entries, 0, Infinity)).toEqual({
       trips: 4,
-      distanceKm: 46,
+      distanceKm: 69,
       rangeUsedKm: 68,
       refuels: 1,
       liters: 30,
       spentAmd: 15000,
-      services: 0,
-      expenses: 0,
-      otherAmd: 0,
     });
   });
 
-  it('counts services and expenses as other spending, never as fuel', () => {
-    const entries = [
-      ...realNotes,
-      refuel('f', at(16, 19, 0), 30, 15000, 400),
-      service('s', at(16, 9, 0), 25000),
-      expense('x', at(16, 10, 0), 500),
+  it('counts a trip with no distance as the range it used, as the Today line does', () => {
+    const log = [
+      reading('r', at(16, 7, 0), 100),
+      trip('a', at(16, 8, 0), 'x', 'y', { rangeKm: 85 }), // no distance: 15 km of range
+      trip('b', at(16, 9, 0), 'y', 'x', { distanceKm: 10, rangeKm: 70 }), // distance wins over 15
     ];
-    const s = summarize(entries, 0, Infinity);
-    expect(s.spentAmd).toBe(15000);
-    expect(s.liters).toBe(30);
-    expect(s.services).toBe(1);
-    expect(s.expenses).toBe(1);
-    expect(s.otherAmd).toBe(25500);
-    // Nothing about driving moved.
-    expect(s.rangeUsedKm).toBe(68);
-    expect(s.trips).toBe(4);
+    const from = at(16, 0, 0);
+    const s = summarize(log, from, Infinity);
+    expect(s.distanceKm).toBe(25);
+    expect(s.rangeUsedKm).toBe(30);
+    expect(drivenKm(log, from, Infinity)).toBe(s.distanceKm);
+    expect(drivenKm(realNotes, 0, Infinity)).toBe(summarize(realNotes, 0, Infinity).distanceKm);
   });
 
   it('includes the start of the window and excludes the end', () => {
@@ -343,8 +324,6 @@ describe('tripRangeUsedKm', () => {
 });
 
 describe('todayLine', () => {
-  afterEach(() => setLang('en'));
-
   it('shows length, range used and the cost from range', () => {
     expect(todayLine({ driven: 38.9, used: 45, amd: 2160 })).toBe(
       'Today: 38.9 km driven · 45 km range used · ≈ 2 160 AMD',
@@ -358,13 +337,6 @@ describe('todayLine', () => {
   it('leaves out the cost when there is no estimate', () => {
     expect(todayLine({ driven: 12, used: 15 })).toBe('Today: 12 km driven · 15 km range used');
     expect(todayLine({ driven: 0, used: 0 })).toBe('Today: 0 km driven');
-  });
-
-  it('speaks the current language', () => {
-    setLang('ru');
-    expect(todayLine({ driven: 38.9, used: 45, amd: 2160 })).toBe(
-      'Сегодня: проехано 38.9 км · расход запаса 45 км · ≈ 2 160 AMD',
-    );
   });
 });
 
@@ -408,44 +380,5 @@ describe('periodStart', () => {
 
   it('is 0 for all time', () => {
     expect(periodStart('all', now)).toBe(0);
-  });
-});
-
-describe('dayLabel in other languages', () => {
-  const now = at(16, 19, 0);
-  afterEach(() => setLang('en'));
-
-  it('Russian: short weekday, genitive month', () => {
-    setLang('ru');
-    expect(dayLabel('2026-10-16', now)).toBe('Сегодня');
-    expect(dayLabel('2026-10-15', now)).toBe('Вчера');
-    expect(dayLabel('2026-10-15', at(17, 8, 0))).toBe('Чт, 15 окт');
-    expect(dayLabel('2026-05-09', now)).toBe('Сб, 9 мая');
-    expect(dayLabel('2025-10-15', now)).toBe('Ср, 15 окт 2025');
-  });
-
-  it('Armenian', () => {
-    setLang('hy');
-    expect(dayLabel('2026-10-16', now)).toBe('Այսօր');
-    expect(dayLabel('2026-10-15', now)).toBe('Երեկ');
-    expect(dayLabel('2026-10-15', at(17, 8, 0))).toBe('Հնգ, 15 հոկ');
-    expect(groupByDay(realNotes, now).map((g) => g.label)).toEqual(['Այսօր', 'Երեկ']);
-  });
-});
-
-describe('entryAmd / isCost', () => {
-  it('reads the money field of each kind', () => {
-    expect(entryAmd(refuel('f', 0, 10, 5000))).toBe(5000);
-    expect(entryAmd(service('s', 0, 0))).toBe(0);
-    expect(entryAmd(expense('x', 0, 700))).toBe(700);
-    expect(entryAmd(reading('r', 0, 100))).toBeUndefined();
-    expect(entryAmd(trip('t', 0, 'a', 'b'))).toBeUndefined();
-  });
-
-  it('marks only services and expenses as costs', () => {
-    expect(isCost(service('s', 0, 1))).toBe(true);
-    expect(isCost(expense('x', 0, 1))).toBe(true);
-    expect(isCost(refuel('f', 0, 10, 5000))).toBe(false);
-    expect(isCost(trip('t', 0, 'a', 'b'))).toBe(false);
   });
 });

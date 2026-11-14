@@ -17,22 +17,17 @@
  *  - A negative drop. The dashboard re-estimates from recent consumption and can
  *    tick UP after a gentle stretch; that is not "negative fuel used".
  *
- * Services and expenses are money, not driving: even one that somehow carries
- * a range (an import, the chat) is passed over as if it were not in the log,
- * so it can neither start nor break a measurement.
- *
  * ── DAYS ARE LOCAL ───────────────────────────────────────────────────────
  *
  * A drive at 23:40 belongs to the evening the user lived, so day keys, labels and
  * period starts are all local time, and day arithmetic goes through `Date`
  * rather than 86,400,000 ms so a DST night does not shift a week boundary.
- * Names are written out by hand because Hermes' `Intl` is incomplete on Android,
- * one table per language in `i18n/strings/lib.ts`, read at call time so a
- * language switch is picked up by the next render.
+ * Names are written out by hand (`i18n/strings/lib.ts`) because Hermes' `Intl`
+ * is incomplete on Android.
  */
 
 import { t, type StringKey } from '../i18n';
-import type { Entry, ExpenseEntry, ServiceEntry } from '../types';
+import type { Entry, TripEntry } from '../types';
 
 import { formatAmd, formatKm } from './numbers';
 
@@ -49,19 +44,6 @@ function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Service or expense: spending that has nothing to do with fuel or range. */
-export function isCost(entry: Entry): entry is ServiceEntry | ExpenseEntry {
-  return entry.kind === 'service' || entry.kind === 'expense';
-}
-
-/** What an entry cost, AMD: a refuel's price, a service's cost, an expense's amount. */
-export function entryAmd(entry: Entry): number | undefined {
-  if (entry.kind === 'refuel') return entry.priceAmd;
-  if (entry.kind === 'service') return entry.costAmd;
-  if (entry.kind === 'expense') return entry.amountAmd;
-  return undefined;
-}
-
 /** Entry id → km of range used since the previous reading. Only meaningful drops appear. */
 export function rangeUsedById(entries: Entry[]): Map<string, number> {
   const used = new Map<string, number>();
@@ -69,7 +51,6 @@ export function rangeUsedById(entries: Entry[]): Map<string, number> {
   let refuelSinceBaseline = false;
 
   for (const entry of sortOldestFirst(entries)) {
-    if (isCost(entry)) continue;
     if (entry.rangeKm === undefined) {
       if (entry.kind === 'refuel') refuelSinceBaseline = true;
       continue;
@@ -85,9 +66,23 @@ export function rangeUsedById(entries: Entry[]): Map<string, number> {
   return used;
 }
 
+/**
+ * The range a new entry's "range used" will be measured from, by the same
+ * rule as `rangeUsedById`: the latest reading, unless a refuel without range
+ * came after it (then there is no clean baseline, and undefined).
+ */
+export function nextRangeBaseline(entries: Entry[]): number | undefined {
+  let baseline: number | undefined;
+  for (const entry of sortOldestFirst(entries)) {
+    if (entry.rangeKm !== undefined) baseline = entry.rangeKm;
+    else if (entry.kind === 'refuel') baseline = undefined;
+  }
+  return baseline;
+}
+
 /** What the dashboard said most recently, if anything ever recorded it. */
 export function currentRangeKm(entries: Entry[]): number | undefined {
-  return sortNewestFirst(entries).find((e) => !isCost(e) && e.rangeKm !== undefined)?.rangeKm;
+  return sortNewestFirst(entries).find((e) => e.rangeKm !== undefined)?.rangeKm;
 }
 
 function pad(n: number): string {
@@ -101,8 +96,7 @@ export function dayKey(at: number): string {
 }
 
 /**
- * "Today", "Yesterday", "Thu, 15 Oct", or "Thu, 15 Oct 2025" for another year,
- * in the current language ("Чт, 15 окт", "Հնգ, 15 հոկ").
+ * "Today", "Yesterday", "Thu, 15 Oct", or "Thu, 15 Oct 2025" for another year.
  */
 export function dayLabel(key: string, now: number): string {
   if (key === dayKey(now)) return t('common.today');
@@ -147,11 +141,7 @@ export function groupByDay(entries: Entry[], now: number): DayGroup[] {
   return groups;
 }
 
-/**
- * `spentAmd` stays what it always was, money paid at refuels, because the
- * average AMD/L and the chat read it as fuel money. Everything else the car
- * cost is `otherAmd` (services + expenses), so the total is the sum of the two.
- */
+/** `spentAmd` is money paid at refuels, the only spending the log records. */
 export type Summary = {
   trips: number;
   distanceKm: number;
@@ -159,9 +149,6 @@ export type Summary = {
   refuels: number;
   liters: number;
   spentAmd: number;
-  services: number;
-  expenses: number;
-  otherAmd: number;
 };
 
 /** Totals for `fromMs <= at < toMs`. */
@@ -176,45 +163,37 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
     refuels: 0,
     liters: 0,
     spentAmd: 0,
-    services: 0,
-    expenses: 0,
-    otherAmd: 0,
   };
   for (const entry of entries) {
     if (entry.at < fromMs || entry.at >= toMs) continue;
     summary.rangeUsedKm += used.get(entry.id) ?? 0;
     if (entry.kind === 'trip') {
       summary.trips += 1;
-      summary.distanceKm += entry.distanceKm ?? 0;
+      summary.distanceKm += tripKm(entry, used);
     } else if (entry.kind === 'refuel') {
       summary.refuels += 1;
       summary.liters += entry.liters;
       summary.spentAmd += entry.priceAmd;
-    } else if (entry.kind === 'service') {
-      summary.services += 1;
-      summary.otherAmd += entry.costAmd;
-    } else if (entry.kind === 'expense') {
-      summary.expenses += 1;
-      summary.otherAmd += entry.amountAmd;
     }
   }
   return summary;
 }
 
 /**
- * km driven in `fromMs <= at < toMs`: each trip's own distance, or, when it
- * has none, the range it used, so a trip logged with only a dashboard reading
- * still counts as driving. Its cost is priced from range used instead (see
- * lib/fuel), which `tripRangeUsedKm` sums.
+ * How far a trip went: its own distance, or, when it has none, the range it
+ * used, so a trip logged with only a dashboard reading still counts as
+ * driving. The Log's Today line and the Summary both count km this way, so
+ * they agree. Its cost is priced from range used instead (see lib/fuel).
  */
+function tripKm(trip: TripEntry, used: Map<string, number>): number {
+  return trip.distanceKm !== undefined && trip.distanceKm > 0
+    ? trip.distanceKm
+    : (used.get(trip.id) ?? 0);
+}
+
+/** km driven in `fromMs <= at < toMs` (see `tripKm`). */
 export function drivenKm(entries: Entry[], fromMs: number, toMs: number): number {
-  const used = rangeUsedById(entries);
-  let km = 0;
-  for (const e of entries) {
-    if (e.kind !== 'trip' || e.at < fromMs || e.at >= toMs) continue;
-    km += e.distanceKm !== undefined && e.distanceKm > 0 ? e.distanceKm : (used.get(e.id) ?? 0);
-  }
-  return km;
+  return summarize(entries, fromMs, toMs).distanceKm;
 }
 
 /**

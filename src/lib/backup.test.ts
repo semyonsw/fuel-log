@@ -1,6 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
-
-import { setLang } from '../i18n';
+import { describe, expect, it } from 'vitest';
 
 import {
   backupFileName,
@@ -13,51 +11,56 @@ import {
   serializeBackup,
   staleBackups,
 } from './backup';
-import { newChat } from './chat';
 import { at, realNotes, reading, refuel, trip } from './entries.fixtures';
 
 const sample = () =>
   buildBackup({
     entries: [
       ...realNotes,
-      {
-        ...refuel('f', at(16, 9, 0), 30, 15000),
-        station: 'Max Petrol',
-        address: 'Komitas 5',
-        grade: '92' as const,
-        odometerKm: 81234,
-      },
-      {
-        id: 's',
-        at: at(16, 11, 0),
-        kind: 'service' as const,
-        category: 'oil' as const,
-        costAmd: 25000,
-        odometerKm: 81300,
-        place: 'Garage',
-        remindKm: 10000,
-        remindMonths: 12,
-      },
-      {
-        id: 'x',
-        at: at(16, 12, 0),
-        kind: 'expense' as const,
-        category: 'wash' as const,
-        amountAmd: 3000,
-      },
+      refuel('f', at(16, 9, 0), 30, 15000, 400),
       trip('g', at(16, 10, 0), 'a', 'b', { track: [{ lat: 40.1, lon: 44.5, t: 1 }] }),
     ],
-    chats: [{ ...newChat('c1', 5), messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }] }],
-    settings: {
-      consumption: '8',
-      geminiModel: 'gemini-3.8-flash',
-      fuelBudget: '60000',
-      expenseBudget: '20000',
-    },
-    apiKey: 'AIza-test',
-    appVersion: '1.1.0',
+    settings: { consumption: '8' },
+    appVersion: '1.8.0',
     now: at(16, 19, 5),
   });
+
+/** What 1.7.x wrote: AI chats, a key, a model, budgets, and the two retired kinds. */
+const v17File = () => ({
+  app: 'fuel-log',
+  format: 1,
+  exportedAt: '2026-10-16T15:05:00.000Z',
+  appVersion: '1.7.0',
+  entries: [
+    ...realNotes,
+    {
+      ...refuel('f', at(16, 9, 0), 30, 15000),
+      station: 'Max Petrol',
+      address: 'Komitas 5',
+      grade: '92',
+      odometerKm: 81234,
+    },
+    {
+      id: 's',
+      at: at(16, 11, 0),
+      kind: 'service',
+      category: 'oil',
+      costAmd: 25000,
+      odometerKm: 81300,
+      remindKm: 10000,
+    },
+    { id: 'x', at: at(16, 12, 0), kind: 'expense', category: 'wash', amountAmd: 3000 },
+  ],
+  chats: [{ id: 'c1', title: '', messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }] }],
+  geminiApiKey: 'AIza-test',
+  settings: {
+    consumption: '8',
+    geminiModel: 'gemini-3.8-flash',
+    fuelBudget: '60000',
+    expenseBudget: '20000',
+    language: 'ru',
+  },
+});
 
 describe('backup round trip', () => {
   it('everything survives serialise → parse', () => {
@@ -68,6 +71,31 @@ describe('backup round trip', () => {
 
   it('is human-readable (indented)', () => {
     expect(serializeBackup(sample())).toContain('\n  "entries": [');
+  });
+});
+
+describe('parseBackup of a 1.7.x file', () => {
+  const r = parseBackup(JSON.stringify(v17File()));
+  if (!r.ok) throw new Error('a 1.7.x backup must still import');
+
+  it('keeps only trips, readings and refuels', () => {
+    expect(r.backup.entries.map((e) => e.id)).toEqual([...realNotes.map((e) => e.id), 'f']);
+    expect(new Set(r.backup.entries.map((e) => e.kind))).toEqual(
+      new Set(['trip', 'reading', 'refuel']),
+    );
+  });
+
+  it('keeps the refuel without its station, address, grade or odometer', () => {
+    expect(r.backup.entries.find((e) => e.id === 'f')).toEqual(
+      refuel('f', at(16, 9, 0), 30, 15000),
+    );
+  });
+
+  it('carries only consumption as settings, and no chats or key', () => {
+    expect(r.backup.settings).toEqual({ consumption: '8' });
+    expect(Object.keys(r.backup).sort()).toEqual(
+      ['app', 'appVersion', 'entries', 'exportedAt', 'format', 'settings'].sort(),
+    );
   });
 });
 
@@ -92,44 +120,32 @@ describe('parseBackup rejects what is not ours', () => {
     const r = parseBackup(JSON.stringify(b));
     expect(r.ok && r.backup.entries).toEqual([reading('r', 1, 100)]);
   });
-  it('missing chats / settings / key default sensibly (older exports)', () => {
+  it('missing settings default sensibly (older exports)', () => {
     const r = parseBackup(JSON.stringify({ app: 'fuel-log', format: 1, entries: [] }));
     expect(r.ok && r.backup).toMatchObject({
-      chats: [],
-      settings: { consumption: '', geminiModel: '' },
-      geminiApiKey: '',
+      exportedAt: '',
+      appVersion: '',
+      settings: { consumption: '' },
     });
-  });
-  it('a file from before budgets carries none, rather than blank ones', () => {
-    const old = {
-      app: 'fuel-log',
-      format: 1,
-      entries: [],
-      settings: { consumption: '7', geminiModel: 'm' },
-    };
-    const r = parseBackup(JSON.stringify(old));
-    expect(r.ok && r.backup.settings).toEqual({ consumption: '7', geminiModel: 'm' });
   });
 });
 
 describe('importedSettings', () => {
-  const phone = { consumption: '7', geminiModel: 'a', fuelBudget: '50000', expenseBudget: '' };
-  const file = { consumption: '8', geminiModel: 'b', fuelBudget: '60000', expenseBudget: '9000' };
-
-  it('replace: the file wins', () => {
-    expect(importedSettings(phone, file, 'replace')).toEqual(file);
+  it('replace: the file wins, even with a blank', () => {
+    expect(importedSettings({ consumption: '7' }, { consumption: '8' }, 'replace')).toEqual({
+      consumption: '8',
+    });
+    expect(importedSettings({ consumption: '7' }, { consumption: '' }, 'replace')).toEqual({
+      consumption: '',
+    });
   });
 
   it('merge: the file only fills what the phone has blank', () => {
-    expect(importedSettings(phone, file, 'merge')).toEqual({ ...phone, expenseBudget: '9000' });
-  });
-
-  it('a file from before budgets keeps the phone budgets, even on replace', () => {
-    const old = { consumption: '8', geminiModel: 'b' };
-    expect(importedSettings(phone, old, 'replace')).toEqual({
-      ...phone,
+    expect(importedSettings({ consumption: '7' }, { consumption: '8' }, 'merge')).toEqual({
+      consumption: '7',
+    });
+    expect(importedSettings({ consumption: '' }, { consumption: '8' }, 'merge')).toEqual({
       consumption: '8',
-      geminiModel: 'b',
     });
   });
 });
@@ -187,14 +203,5 @@ describe('folderLabel', () => {
       'Internal storage',
     );
     expect(folderLabel('weird')).toBe('weird');
-  });
-});
-
-describe('parseBackup in Russian', () => {
-  afterEach(() => setLang('en'));
-
-  it('explains the error in the current language', () => {
-    setLang('ru');
-    expect(parseBackup('hello')).toEqual({ ok: false, error: 'Файл не является корректным JSON.' });
   });
 });

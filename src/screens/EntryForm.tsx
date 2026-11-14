@@ -2,24 +2,20 @@
  * Add / edit an entry: a full-screen sheet that slides up over the tabs.
  *
  * Layout is built for one hand in a parked car: the kind switch at the top
- * (Trip / Range from "+"; none on the refuel, service and expense buttons'
- * single-kind forms) with one
- * line saying what that kind is for, the fields the user actually
- * types in the middle (places first, because a trip is mostly "where to
+ * (Trip / Range from "+"; none on the fuel button's refuel-only form) with
+ * one line saying what that kind is for, the fields the user actually types
+ * in the middle (places first, because a trip is mostly "where to
  * where"), the time below them since it's usually "now" already, and Save
  * pinned at the bottom under the thumb, with one line above it saying what
  * is still missing.
- *
- * Service and expense categories are chips, not a dropdown: there are at most
- * nine, they fit on screen, and picking one is a single tap.
  *
  * The form holds a lib `Draft` (raw strings) so half-typed "33," survives;
  * `validateDraft` is the only place that turns it into an Entry. Field errors
  * stay hidden until the first Save press so a fresh form isn't covered in red.
  *
- * A form can open pre-filled — from a GPS recording or from the AI's reading
- * of a dashboard photo. Pre-filled fields carry a small marker ("from GPS",
- * "from photo") until the user edits them; nothing is saved until Save.
+ * A form can open pre-filled from a GPS recording. Pre-filled fields carry a
+ * small marker ("from GPS") until the user edits them; nothing is saved until
+ * Save.
  *
  * Keyboard: the window resizes (softwareKeyboardLayoutMode "resize"), but with
  * edge-to-edge that isn't guaranteed on every Android version, so the sheet
@@ -44,9 +40,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CloseIcon } from '../components/icons';
 import { PlaceField } from '../components/PlaceField';
 import { RouteMap } from '../components/RouteMap';
-import { Dropdown } from '../components/Dropdown';
-import { AddressField, StationField } from '../components/StationField';
-import { Button, Chip, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
+import { Button, ConfirmSheet, Field, SectionLabel, Segmented, Tap } from '../components/ui';
 import { WhenPicker } from '../components/WhenPicker';
 import {
   draftFromEntry,
@@ -56,41 +50,30 @@ import {
   validateDraft,
   type Draft,
 } from '../lib/draft';
-import {
-  EXPENSE_CATEGORIES,
-  expenseLabel,
-  SERVICE_CATEGORIES,
-  serviceLabel,
-} from '../lib/categories';
-import { currentRangeKm, rangeUsedById } from '../lib/entries';
+import { currentRangeKm, nextRangeBaseline, rangeUsedById } from '../lib/entries';
 import { effectiveKmPerLiter, tripFuelEstimate } from '../lib/fuel';
 import { trackDistanceKm } from '../lib/geo';
 import { newId } from '../lib/id';
 import { formatAmd, formatKm, formatLiters, parseNumber } from '../lib/numbers';
-import { addressForStation, FUEL_GRADES, refuelDefaults } from '../lib/stations';
 import { formatDelta } from '../components/format';
 import { t, type StringKey } from '../i18n';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
-import { colors, fonts, radius, spacing, TOUCH, type } from '../theme';
+import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 import type { Entry, EntryKind } from '../types';
 
-const KINDS: EntryKind[] = ['trip', 'reading', 'refuel', 'service', 'expense'];
+const KINDS: EntryKind[] = ['trip', 'reading', 'refuel'];
 
 const KIND_LABEL: Record<EntryKind, StringKey> = {
   trip: 'form.kind.trip',
   reading: 'form.kind.reading',
   refuel: 'form.kind.refuel',
-  service: 'kinds.service',
-  expense: 'kinds.expense',
 };
 
 const KIND_HINT: Record<EntryKind, StringKey> = {
   trip: 'form.kindHint.trip',
   reading: 'form.kindHint.reading',
   refuel: 'form.kindHint.refuel',
-  service: 'form.kindHint.service',
-  expense: 'form.kindHint.expense',
 };
 
 /** [new, edit] titles. Trip and Range share one: the "+" form switches between them. */
@@ -98,8 +81,6 @@ const TITLE: Record<EntryKind, [StringKey, StringKey]> = {
   trip: ['form.title.new', 'form.title.edit'],
   reading: ['form.title.new', 'form.title.edit'],
   refuel: ['form.title.newRefuel', 'form.title.editRefuel'],
-  service: ['form.title.newService', 'form.title.editService'],
-  expense: ['form.title.newExpense', 'form.title.editExpense'],
 };
 
 /** Where a pre-filled value came from, shown next to its label. */
@@ -112,7 +93,7 @@ export function EntryForm({
   onClose,
 }: {
   editing?: Entry;
-  /** A pre-filled new entry (GPS recording, AI reading, "Add refuel"). */
+  /** A pre-filled new entry (GPS recording, "Add refuel"). */
   initial?: Draft;
   initialMarkers?: FormMarkers;
   onClose: () => void;
@@ -125,19 +106,11 @@ export function EntryForm({
   const consumption = useSettings((s) => s.consumption);
 
   const [id] = useState(() => editing?.id ?? newId());
-  const [draft, setDraft] = useState<Draft>(() => {
-    if (editing) return draftFromEntry(editing);
-    const d = initial ?? emptyDraft('trip', Date.now());
-    // A new refuel starts at the last fill-up's pump and grade; only when the
-    // opener left all three blank, so a pre-fill from elsewhere wins.
-    if (d.kind === 'refuel' && !d.station.trim() && !d.address.trim() && !d.grade) {
-      return { ...d, ...refuelDefaults(entries) };
-    }
-    return d;
-  });
-  // Fixed at open: the refuel, service and expense forms are single-kind, the "+" form is trip/range.
+  const [draft, setDraft] = useState<Draft>(() =>
+    editing ? draftFromEntry(editing) : (initial ?? emptyDraft('trip', Date.now())),
+  );
+  // Fixed at open: the refuel form is single-kind, the "+" form is trip/range.
   const [kindValues] = useState(() => KINDS.filter((k) => formKinds(draft.kind).includes(k)));
-  // Labels at render time, so they follow the language.
   const kinds = kindValues.map((value) => ({ value, label: t(KIND_LABEL[value]) }));
   const [markers, setMarkers] = useState<FormMarkers>(initialMarkers ?? {});
   const [showErrors, setShowErrors] = useState(false);
@@ -147,7 +120,7 @@ export function EntryForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const result = useMemo(() => validateDraft(draft, id), [draft, id]);
   const errors = showErrors && !result.ok ? result.errors : {};
-  const hint = result.ok ? '' : saveHint(result.errors, draft.kind);
+  const hint = result.ok ? '' : saveHint(result.errors);
 
   // A hint, not a pre-fill: what the dashboard said last time, so the user
   // has a sanity check for the number they're about to type.
@@ -158,10 +131,16 @@ export function EntryForm({
   const km = t('form.unit.km');
   const rangePlaceholder =
     lastRange === undefined ? km : t('form.lastRange', { km: formatKm(lastRange) });
+  // Measured from the baseline the saved entry will use, so the live "−X"
+  // never promises a range used that the log then does not show.
+  const baseline = useMemo(
+    () => (editing ? undefined : nextRangeBaseline(entries)),
+    [editing, entries],
+  );
   const typedRange = parseNumber(draft.range);
   const liveUsed =
-    lastRange !== undefined && typedRange !== undefined && lastRange - typedRange > 0
-      ? lastRange - typedRange
+    baseline !== undefined && typedRange !== undefined && baseline - typedRange > 0
+      ? baseline - typedRange
       : undefined;
 
   // The trip's approximate cost, live: the log as it would be with this trip saved.
@@ -421,91 +400,6 @@ export function EntryForm({
                 </Text>
               ) : null}
             </View>
-          ) : draft.kind === 'service' ? (
-            <>
-              <CategoryChips
-                options={SERVICE_CATEGORIES.map((c) => ({ value: c, label: serviceLabel(c) }))}
-                value={draft.category}
-                onChange={(c) => set('category', c)}
-                error={errors.category}
-              />
-              <View style={styles.pair}>
-                <View style={styles.flex}>
-                  <Field
-                    label={t('kinds.field.cost')}
-                    suffix="AMD"
-                    numeric
-                    keyboardType="number-pad"
-                    value={draft.price}
-                    onChangeText={(v) => set('price', v)}
-                    error={errors.price}
-                    placeholder="20000"
-                  />
-                </View>
-                <View style={styles.flex}>
-                  <Field
-                    label={t('kinds.field.odometer')}
-                    suffix={km}
-                    numeric
-                    keyboardType="number-pad"
-                    value={draft.odometer}
-                    onChangeText={(v) => set('odometer', v)}
-                    error={errors.odometer}
-                    placeholder={km}
-                  />
-                </View>
-              </View>
-              <Field
-                label={t('kinds.field.place')}
-                value={draft.place}
-                onChangeText={(v) => set('place', v)}
-              />
-              <View style={styles.pair}>
-                <View style={styles.flex}>
-                  <Field
-                    label={t('kinds.field.remindKm')}
-                    suffix={km}
-                    numeric
-                    keyboardType="number-pad"
-                    value={draft.remindKm}
-                    onChangeText={(v) => set('remindKm', v)}
-                    error={errors.remindKm}
-                    placeholder="10000"
-                  />
-                </View>
-                <View style={styles.flex}>
-                  <Field
-                    label={t('kinds.field.remindMonths')}
-                    suffix={t('form.unit.months')}
-                    numeric
-                    keyboardType="number-pad"
-                    value={draft.remindMonths}
-                    onChangeText={(v) => set('remindMonths', v)}
-                    error={errors.remindMonths}
-                    placeholder="12"
-                  />
-                </View>
-              </View>
-            </>
-          ) : draft.kind === 'expense' ? (
-            <>
-              <CategoryChips
-                options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: expenseLabel(c) }))}
-                value={draft.category}
-                onChange={(c) => set('category', c)}
-                error={errors.category}
-              />
-              <Field
-                label={t('kinds.field.amount')}
-                suffix="AMD"
-                numeric
-                keyboardType="number-pad"
-                value={draft.price}
-                onChangeText={(v) => set('price', v)}
-                error={errors.price}
-                placeholder="5000"
-              />
-            </>
           ) : (
             <>
               <View style={styles.pair}>
@@ -544,46 +438,6 @@ export function EntryForm({
                 error={errors.range}
                 marker={markers.range}
                 placeholder={km}
-              />
-              <Field
-                label={t('form.odometerOptional')}
-                suffix={km}
-                numeric
-                keyboardType="number-pad"
-                value={draft.odometer}
-                onChangeText={(v) => set('odometer', v)}
-                error={errors.odometer}
-                placeholder={km}
-              />
-              <StationField
-                value={draft.station}
-                onChange={(v) =>
-                  setDraft((d) => ({
-                    ...d,
-                    station: v,
-                    address: addressForStation(entries, d.station, v, d.address),
-                  }))
-                }
-                onPick={(name) =>
-                  setDraft((d) => ({
-                    ...d,
-                    station: name,
-                    address: addressForStation(entries, d.station, name, d.address),
-                  }))
-                }
-              />
-              <AddressField
-                value={draft.address}
-                station={draft.station}
-                onChange={(v) => set('address', v)}
-              />
-              <Dropdown
-                label={t('form.gradeLabel')}
-                value={draft.grade}
-                options={FUEL_GRADES}
-                onChange={(g) => set('grade', g)}
-                placeholder={t('form.notSet')}
-                clearLabel={t('form.notSet')}
               />
             </>
           )}
@@ -645,40 +499,6 @@ export function EntryForm({
   );
 }
 
-/**
- * One tap picks a category. A draft carries one `category` for both kinds, so
- * a value from the other list (impossible from a single-kind form, but cheap
- * to guard) simply shows nothing selected and validation asks again.
- */
-function CategoryChips<T extends string>({
-  options,
-  value,
-  onChange,
-  error,
-}: {
-  options: { value: T; label: string }[];
-  value: string | undefined;
-  onChange: (v: T) => void;
-  error?: string;
-}) {
-  return (
-    <View style={styles.categories}>
-      <Text style={styles.categoryLabel}>{t('kinds.field.category')}</Text>
-      <View style={styles.chipRow} accessibilityRole="radiogroup">
-        {options.map((o) => (
-          <Chip
-            key={o.value}
-            label={o.label}
-            active={o.value === value}
-            onPress={() => onChange(o.value)}
-          />
-        ))}
-      </View>
-      {error ? <Text style={styles.categoryError}>{error}</Text> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
   flex: { flex: 1 },
@@ -703,10 +523,6 @@ const styles = StyleSheet.create({
   kindHintAlone: { marginTop: 0 },
   content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
   pair: { flexDirection: 'row', gap: spacing.md },
-  categories: { gap: spacing.xs + 2 },
-  categoryLabel: { color: colors.muted, ...type.label },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  categoryError: { color: colors.danger, ...type.small },
   mapBlock: { gap: spacing.sm },
   muted: { color: colors.muted, fontFamily: fonts.num, fontSize: 13, fontWeight: '500' },
   estimate: {

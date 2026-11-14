@@ -14,7 +14,6 @@ import { requestAll, type PermissionReport } from '../services/permissions';
 import { useSettings } from '../state/settings';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
 
-// Keys only; the texts are looked up at render so they follow the current language.
 const ITEMS: { key: keyof PermissionReport; title: StringKey; why: StringKey }[] = [
   { key: 'location', title: 'welcome.location.title', why: 'welcome.location.why' },
   { key: 'background', title: 'welcome.background.title', why: 'welcome.background.why' },
@@ -23,7 +22,6 @@ const ITEMS: { key: keyof PermissionReport; title: StringKey; why: StringKey }[]
     title: 'welcome.notifications.title',
     why: 'welcome.notifications.why',
   },
-  { key: 'camera', title: 'welcome.camera.title', why: 'welcome.camera.why' },
   { key: 'folder', title: 'welcome.folder.title', why: 'welcome.folder.why' },
 ];
 

@@ -1,6 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
-
-import { setLang } from '../i18n';
+import { describe, expect, it } from 'vitest';
 
 import { consumptionNote, consumptionSource } from './consumption';
 import { at, reading, refuel } from './entries.fixtures';
@@ -37,16 +35,5 @@ describe('consumptionNote', () => {
     );
     expect(consumptionNote({ lPer100: 12.5, from: 'log' })).toBe('Using 12.5 L/100 km from log');
     expect(consumptionNote(undefined)).toBeUndefined();
-  });
-});
-
-describe('consumptionNote in Russian', () => {
-  afterEach(() => setLang('en'));
-
-  it('follows the current language', () => {
-    setLang('ru');
-    expect(consumptionNote({ lPer100: 7.2, from: 'settings' })).toBe(
-      'Расход 7.2 л/100 км (из Настроек)',
-    );
   });
 });

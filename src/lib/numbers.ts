@@ -16,18 +16,14 @@
  * Hermes ships with partial `Intl`, and `toLocaleString` on Android has printed
  * both "15,000" and "15 000" depending on the build. The grouping here is done by
  * hand so the screen says the same thing on every phone and in every test.
- * Units follow the UI language (km / կմ / км, L / լ / л) but always as
- * "<number> <unit>" with one space, which `splitUnit` relies on. AMD stays
- * Latin in every language: it is what receipts and price boards print.
+ * Units are always "<number> <unit>" with one space, which `splitUnit`
+ * relies on.
  */
 
 import { t } from '../i18n';
 
-/**
- * A trailing unit the user may have typed after the number, in any of the UI
- * languages, since they type what the screen shows. Longest first so "amd" wins.
- */
-const UNIT = /(km|amd|կմ|км|l|լ|л|֏)$/i;
+/** A trailing unit the user may have typed after the number. Longest first so "amd" wins. */
+const UNIT = /(km|amd|l|֏)$/i;
 
 /** A plain non-negative decimal once spaces, unit and comma are dealt with. */
 const PLAIN = /^(\d+(\.\d*)?|\.\d+)$/;
