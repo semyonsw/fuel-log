@@ -78,11 +78,15 @@ export const summary = defineStrings({
   'summary.data.entriesNow.other': '{n} entries now.',
   'summary.data.entries.one': '{n} entry',
   'summary.data.entries.other': '{n} entries',
+  'summary.data.chats.one': '{n} chat',
+  'summary.data.chats.other': '{n} chats',
   'summary.data.confirmTitle': 'Import this backup?',
   'summary.data.backup': 'Backup',
   'summary.data.backupFrom': 'Backup from {when}',
   'summary.data.confirmBody':
-    '{head}: {entries}.\n\nMerge adds new entries and updates changed ones; nothing is deleted.\nReplace makes this phone match the file exactly.',
+    '{head}: {entries}, {chats}.\n\nMerge adds new entries and updates changed ones; nothing is deleted.\nReplace makes this phone match the file exactly.',
+  'summary.data.confirmBodyNoChats':
+    "{head}: {entries}. It has no AI chats, so the chats on this phone stay as they are.\n\nMerge adds new entries and updates changed ones; nothing is deleted.\nReplace makes this phone's entries match the file exactly.",
   'summary.data.replace': 'Replace',
   'summary.data.merge': 'Merge',
   'summary.backup.notJson': 'This file is not valid JSON.',

@@ -3,16 +3,31 @@
  * `strings/<area>.ts`; keys are prefixed with the area so they never collide.
  */
 
+import { ai } from './ai';
 import { app } from './app';
+import { chat } from './chat';
 import { common } from './common';
 import { components } from './components';
 import { form } from './form';
 import { lib } from './lib';
 import { services } from './services';
+import { stats } from './stats';
 import { summary } from './summary';
 import { welcome } from './welcome';
 
-const AREAS = [common, welcome, components, services, summary, lib, app, form] as const;
+const AREAS = [
+  common,
+  welcome,
+  components,
+  services,
+  summary,
+  lib,
+  app,
+  form,
+  ai,
+  chat,
+  stats,
+] as const;
 
 type Merge<T extends readonly object[]> = T extends readonly [
   infer H extends object,

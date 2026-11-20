@@ -9,6 +9,7 @@
  * to be visible. Anything refused is simply asked again when first used.
  */
 
+import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { PermissionsAndroid, Platform } from 'react-native';
 
@@ -18,6 +19,7 @@ export type PermissionReport = {
   location: boolean;
   background: boolean;
   notifications: boolean;
+  camera: boolean;
   folder: boolean;
 };
 
@@ -44,6 +46,9 @@ export async function requestAll(): Promise<PermissionReport> {
       async () => (await Location.requestBackgroundPermissionsAsync()).status === 'granted',
     ));
   const notif = await safe(notifications);
+  const camera = await safe(
+    async () => (await ImagePicker.requestCameraPermissionsAsync()).status === 'granted',
+  );
   const folder = await safe(chooseBackupFolder);
-  return { location, background, notifications: notif, folder };
+  return { location, background, notifications: notif, camera, folder };
 }

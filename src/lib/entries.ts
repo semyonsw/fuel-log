@@ -185,7 +185,7 @@ export function summarize(entries: Entry[], fromMs: number, toMs: number): Summa
  * driving. The Log's Today line and the Summary both count km this way, so
  * they agree. Its cost is priced from range used instead (see lib/fuel).
  */
-function tripKm(trip: TripEntry, used: Map<string, number>): number {
+export function tripKm(trip: TripEntry, used: Map<string, number>): number {
   return trip.distanceKm !== undefined && trip.distanceKm > 0
     ? trip.distanceKm
     : (used.get(trip.id) ?? 0);

@@ -2,7 +2,8 @@
  * The one-off safety copy of a 1.7.x install, taken before 2.0 forgets it.
  *
  * 2.0 dropped services, expenses, AI chats, budgets and the refuel station /
- * address / grade / odometer. The stores clean those out of AsyncStorage on
+ * address / grade / odometer (2.1 brought the AI chats back, but a 2.0 that
+ * already ran had deleted them). The stores clean those out of AsyncStorage on
  * their first write, and auto-backup then deletes the older backup files, so
  * without this the only copies would be gone within seconds of the update.
  * The user chose to keep one copy: the raw blobs are set aside before the
@@ -36,7 +37,12 @@ function persistedState(blob: string | null): Row {
 const RETIRED_KINDS = new Set(['service', 'expense']);
 const RETIRED_REFUEL_KEYS = ['station', 'address', 'grade', 'odometerKm'];
 
-/** Whether the blobs hold anything 2.0 would drop; a fresh or 2.0 install holds nothing. */
+/**
+ * Whether the blobs hold anything this build drops; a fresh or 2.x install
+ * holds nothing. Chats do not count: the chats store reads them again, and a
+ * fresh install that later chats must not get a bogus pre-2.0 copy. A copy
+ * taken for another reason still carries them (`legacyBackup`).
+ */
 export function hasLegacyData(b: LegacyBlobs): boolean {
   const entries = persistedState(b.log).entries;
   const rows = Array.isArray(entries) ? (entries as Row[]) : [];
@@ -47,11 +53,8 @@ export function hasLegacyData(b: LegacyBlobs): boolean {
       (RETIRED_KINDS.has(r.kind as string) ||
         (r.kind === 'refuel' && RETIRED_REFUEL_KEYS.some((k) => k in r))),
   );
-  const chats = persistedState(b.chats).chats;
   const s = persistedState(b.settings);
-  return (
-    droppedRow || (Array.isArray(chats) && chats.length > 0) || !!s.fuelBudget || !!s.expenseBudget
-  );
+  return droppedRow || !!s.fuelBudget || !!s.expenseBudget;
 }
 
 /** The 1.7.x backup file for these blobs (the API key lived in the keystore and is not in it). */

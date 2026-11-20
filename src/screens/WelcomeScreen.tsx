@@ -22,6 +22,7 @@ const ITEMS: { key: keyof PermissionReport; title: StringKey; why: StringKey }[]
     title: 'welcome.notifications.title',
     why: 'welcome.notifications.why',
   },
+  { key: 'camera', title: 'welcome.camera.title', why: 'welcome.camera.why' },
   { key: 'folder', title: 'welcome.folder.title', why: 'welcome.folder.why' },
 ];
 

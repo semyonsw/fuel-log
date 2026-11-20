@@ -24,10 +24,16 @@ replaces a running note in Samsung Notes with something that does the arithmetic
   (editable, plus "Add refuel" for a past date).
 - **Fuel calculator:** what a distance costs, or how far an amount takes you.
 - **Consumption:** derived from refuels, or type your car's L/100 km in Settings.
-- **Backup:** export/import one JSON file; auto-backup after every change into a
-  folder you pick once (the newest file replaces the old one).
+- **Statistics:** charts and trends of driving, range and spending over time.
+- **AI chat (Gemini, your own key):** tell it what happened or send a dashboard
+  photo; it proposes log entries you approve. Chats are saved and backed up.
+  Key and model are set in Settings; the key stays in the Android keystore.
+- **Backup:** export/import one JSON file (entries, chats, settings, API key);
+  auto-backup after every change into a folder you pick once (the newest file
+  replaces the old one). Importing `fuel-log-pre-2.0.json` brings back 1.7 chats.
 
-Data stays on the phone (AsyncStorage). The network is used only for map tiles.
+Data stays on the phone (AsyncStorage). The network is used for map tiles and,
+only when you use the AI chat, for Google Gemini.
 
 ## Development
 

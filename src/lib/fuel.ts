@@ -37,9 +37,13 @@ function refuelsAsc(entries: Entry[]): RefuelEntry[] {
   return sortedAsc(entries).filter((e): e is RefuelEntry => e.kind === 'refuel' && e.liters > 0);
 }
 
-/** AMD per litre of the most recent refuel (optionally: at or before `atOrBefore`). */
+/**
+ * AMD per litre of the most recent priced refuel (optionally: at or before
+ * `atOrBefore`). A refuel saved with no price says nothing about the price, so
+ * trip costs keep using the last real one instead of going blank.
+ */
 export function latestPricePerLiter(entries: Entry[], atOrBefore = Infinity): number | undefined {
-  const r = refuelsAsc(entries).filter((e) => e.at <= atOrBefore);
+  const r = refuelsAsc(entries).filter((e) => e.at <= atOrBefore && e.priceAmd > 0);
   const last = r[r.length - 1];
   return last ? last.priceAmd / last.liters : undefined;
 }

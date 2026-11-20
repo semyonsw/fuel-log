@@ -6,6 +6,7 @@
  *                     estimates use. Blank means "derive it from the log", and
  *                     the placeholder shows that derived figure so the user can
  *                     see what blank currently means.
+ *   AI chat           the Gemini API key and model (AiSection).
  *   Data              export / import / backup folder (DataSection).
  */
 
@@ -13,6 +14,7 @@ import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiSection } from '../components/AiSection';
 import { DataSection } from '../components/DataSection';
 import { t } from '../i18n';
 import { SectionLabel } from '../components/ui';
@@ -60,6 +62,8 @@ export function SettingsScreen() {
         </View>
         <Text style={styles.hint}>{t('app.settings.consumptionHint')}</Text>
       </View>
+
+      <AiSection />
 
       <DataSection />
     </ScrollView>

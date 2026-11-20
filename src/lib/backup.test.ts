@@ -3,14 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
   backupFileName,
   buildBackup,
+  canPruneBackups,
   folderLabel,
   importedSettings,
   isBackupFile,
   mergeById,
+  mergeChats,
   parseBackup,
   serializeBackup,
   staleBackups,
 } from './backup';
+import { newChat, type Chat } from './chat';
 import { at, realNotes, reading, refuel, trip } from './entries.fixtures';
 
 const sample = () =>
@@ -20,7 +23,9 @@ const sample = () =>
       refuel('f', at(16, 9, 0), 30, 15000, 400),
       trip('g', at(16, 10, 0), 'a', 'b', { track: [{ lat: 40.1, lon: 44.5, t: 1 }] }),
     ],
-    settings: { consumption: '8' },
+    chats: [{ ...newChat('c1', 5), messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }] }],
+    settings: { consumption: '8', geminiModel: 'gemini-3.8-flash' },
+    apiKey: 'AIza-test',
     appVersion: '1.8.0',
     now: at(16, 19, 5),
   });
@@ -51,7 +56,15 @@ const v17File = () => ({
     },
     { id: 'x', at: at(16, 12, 0), kind: 'expense', category: 'wash', amountAmd: 3000 },
   ],
-  chats: [{ id: 'c1', title: '', messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }] }],
+  chats: [
+    {
+      id: 'c1',
+      title: 'Range',
+      createdAt: 5,
+      updatedAt: 5,
+      messages: [{ id: 'm', role: 'user', text: 'hi', at: 5 }],
+    },
+  ],
   geminiApiKey: 'AIza-test',
   settings: {
     consumption: '8',
@@ -91,11 +104,11 @@ describe('parseBackup of a 1.7.x file', () => {
     );
   });
 
-  it('carries only consumption as settings, and no chats or key', () => {
-    expect(r.backup.settings).toEqual({ consumption: '8' });
-    expect(Object.keys(r.backup).sort()).toEqual(
-      ['app', 'appVersion', 'entries', 'exportedAt', 'format', 'settings'].sort(),
-    );
+  it('brings back the chats, the model and the key, and drops budgets and language', () => {
+    expect(r.backup.chats?.map((c) => c.id)).toEqual(['c1']);
+    expect(r.backup.chats?.[0].messages.map((m) => m.text)).toEqual(['hi']);
+    expect(r.backup.geminiApiKey).toBe('AIza-test');
+    expect(r.backup.settings).toEqual({ consumption: '8', geminiModel: 'gemini-3.8-flash' });
   });
 });
 
@@ -120,32 +133,69 @@ describe('parseBackup rejects what is not ours', () => {
     const r = parseBackup(JSON.stringify(b));
     expect(r.ok && r.backup.entries).toEqual([reading('r', 1, 100)]);
   });
-  it('missing settings default sensibly (older exports)', () => {
+  it('missing chats / settings / key default sensibly (older and 2.0 exports)', () => {
     const r = parseBackup(JSON.stringify({ app: 'fuel-log', format: 1, entries: [] }));
     expect(r.ok && r.backup).toMatchObject({
       exportedAt: '',
       appVersion: '',
-      settings: { consumption: '' },
+      settings: {},
+      geminiApiKey: '',
     });
   });
 });
 
+describe('parseBackup of a 2.0.0 file (no chats, no model)', () => {
+  const v20File = {
+    app: 'fuel-log',
+    format: 1,
+    exportedAt: '2026-11-01T10:00:00.000Z',
+    appVersion: '2.0.0',
+    entries: [reading('r', 1, 100)],
+    settings: { consumption: '8' },
+  };
+  const r = parseBackup(JSON.stringify(v20File));
+  if (!r.ok) throw new Error('a 2.0.0 backup must import');
+
+  it('leaves chats undefined, not empty, so Replace cannot wipe them', () => {
+    expect(r.backup.chats).toBeUndefined();
+    expect('chats' in r.backup).toBe(false);
+  });
+
+  it('leaves the model undefined and keeps the consumption', () => {
+    expect(r.backup.settings).toEqual({ consumption: '8' });
+  });
+
+  it('an explicit empty chat list is still a list', () => {
+    const empty = parseBackup(JSON.stringify({ ...v20File, chats: [] }));
+    expect(empty.ok && empty.backup.chats).toEqual([]);
+  });
+});
+
 describe('importedSettings', () => {
+  const phone = { consumption: '7', geminiModel: 'a' };
+  const file = { consumption: '8', geminiModel: 'b' };
+
   it('replace: the file wins, even with a blank', () => {
-    expect(importedSettings({ consumption: '7' }, { consumption: '8' }, 'replace')).toEqual({
-      consumption: '8',
-    });
-    expect(importedSettings({ consumption: '7' }, { consumption: '' }, 'replace')).toEqual({
+    expect(importedSettings(phone, file, 'replace')).toEqual(file);
+    expect(importedSettings(phone, { consumption: '', geminiModel: '' }, 'replace')).toEqual({
       consumption: '',
+      geminiModel: '',
     });
   });
 
-  it('merge: the file only fills what the phone has blank', () => {
-    expect(importedSettings({ consumption: '7' }, { consumption: '8' }, 'merge')).toEqual({
-      consumption: '7',
-    });
-    expect(importedSettings({ consumption: '' }, { consumption: '8' }, 'merge')).toEqual({
+  it('a setting the file does not carry keeps the phone value, in both modes', () => {
+    expect(importedSettings(phone, { consumption: '8' }, 'replace')).toEqual({
       consumption: '8',
+      geminiModel: 'a',
+    });
+    expect(importedSettings(phone, {}, 'merge')).toEqual(phone);
+  });
+
+  it('merge: the file only fills what the phone has blank', () => {
+    expect(importedSettings(phone, file, 'merge')).toEqual(phone);
+    expect(importedSettings({ consumption: '', geminiModel: 'a' }, file, 'merge')).toEqual({
+      consumption: '8',
+      geminiModel: 'a',
     });
   });
 });
@@ -163,6 +213,54 @@ describe('mergeById', () => {
       added: 0,
       updated: 0,
     });
+  });
+});
+
+describe('mergeChats', () => {
+  const chat = (id: string, updatedAt: number, extra: Partial<Chat> = {}): Chat => ({
+    ...newChat(id, 0),
+    updatedAt,
+    ...extra,
+  });
+
+  it('keeps the phone copy when it was continued after the backup', () => {
+    const phone = [chat('a', 20, { title: 'phone' })];
+    const m = mergeChats(phone, [chat('a', 10, { title: 'file' })]);
+    expect(m.items).toEqual(phone);
+    expect(m).toMatchObject({ added: 0, updated: 0 });
+  });
+
+  it('takes the file copy when it is newer', () => {
+    const file = chat('a', 30, { title: 'file' });
+    const m = mergeChats([chat('a', 20, { title: 'phone' })], [file]);
+    expect(m.items).toEqual([file]);
+    expect(m).toMatchObject({ added: 0, updated: 1 });
+  });
+
+  it('on a tie keeps the phone copy (approvals do not move updatedAt)', () => {
+    const msg = { id: 'm', role: 'model' as const, text: 'ok', at: 10 };
+    const phone = chat('a', 10, { messages: [{ ...msg, savedIds: ['e1'] }] });
+    const m = mergeChats([phone], [chat('a', 10, { messages: [msg] })]);
+    expect(m.items).toEqual([phone]);
+  });
+
+  it('adds chats only in the file', () => {
+    const m = mergeChats([chat('a', 1)], [chat('b', 2)]);
+    expect(m.items.map((c) => c.id)).toEqual(['a', 'b']);
+    expect(m.added).toBe(1);
+  });
+});
+
+describe('canPruneBackups', () => {
+  it('prunes normally when the keystore was read', () => {
+    expect(canPruneBackups('', false)).toBe(true);
+    expect(canPruneBackups('AIza', false)).toBe(true);
+  });
+  it('keeps older files while an unreadable keystore left the key blank', () => {
+    expect(canPruneBackups('', true)).toBe(false);
+  });
+  it('prunes again once a key is known this session', () => {
+    expect(canPruneBackups('AIza', true)).toBe(true);
   });
 });
 

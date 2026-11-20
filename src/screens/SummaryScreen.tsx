@@ -22,12 +22,18 @@
  * The calculator's price is not remembered (it changes at every pump). Its
  * consumption is the one set in Settings (the Log's per-trip estimates use it
  * too), or the log's own figure; a line under Price says which.
+ *
+ * Statistics close the screen and do NOT follow the selected period: month
+ * bars need several months side by side, and a trend or a "most driven" list
+ * over one day says nothing. The figures come from lib/stats, which regroups
+ * the same `summarize` and per-trip estimates the tiles use.
  */
 
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MonthBars, RouteTable, TrendLine } from '../components/Charts';
 import { openDayPicker } from '../components/DayPicker';
 import { dayBounds, splitUnit } from '../components/format';
 import { useHoldRepeat } from '../components/HoldRepeat';
@@ -56,6 +62,14 @@ import {
   type CalcMode,
 } from '../lib/fuel';
 import { formatAmd, formatKm, formatLiters } from '../lib/numbers';
+import {
+  monthBounds,
+  monthChange,
+  monthlyTotals,
+  refuelTrends,
+  topRoutes,
+  type MonthTotal,
+} from '../lib/stats';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
 import { colors, fonts, radius, spacing, TOUCH } from '../theme';
@@ -70,6 +84,9 @@ const MODES: { value: CalcMode; key: StringKey }[] = [
 // A tile value has a unit when it has letters ("km", "AMD", "L"); "—" and
 // bare counts do not.
 const HAS_UNIT = /[A-Za-z]/;
+// Six bars stay ~45dp apart on a 360dp phone, room for a "Sep" under each.
+const STAT_MONTHS = 6;
+const TOP_ROUTES = 5;
 
 export function SummaryScreen({
   onEdit,
@@ -297,7 +314,107 @@ export function SummaryScreen({
       <Tap onPress={onAddRefuel} accessibilityRole="button" style={styles.addRefuel}>
         <Text style={styles.addRefuelText}>{t('summary.addRefuel')}</Text>
       </Tap>
+
+      <Statistics entries={entries} kmPerL={kmPerL} now={now} />
     </ScrollView>
+  );
+}
+
+function Statistics({
+  entries,
+  kmPerL,
+  now,
+}: {
+  entries: Entry[];
+  kmPerL: number | undefined;
+  now: number;
+}) {
+  // Keyed on the month, not the minute: `now` ticks, the months do not.
+  const monthStart = monthBounds(now)[0];
+  const months = useMemo(
+    () => monthlyTotals(entries, monthStart, STAT_MONTHS),
+    [entries, monthStart],
+  );
+  const trends = useMemo(() => refuelTrends(entries), [entries]);
+  const routes = useMemo(() => topRoutes(entries, TOP_ROUTES, kmPerL), [entries, kmPerL]);
+  const efficiency = trends.filter((p) => p.kmPerLiter !== undefined);
+
+  return (
+    <>
+      <Text style={[styles.label, styles.section]}>{t('stats.title')}</Text>
+      <Text style={styles.statsHint}>{t('stats.hint', { n: STAT_MONTHS })}</Text>
+      <MonthBars
+        title={t('stats.chart.spent')}
+        months={months}
+        value={(m) => m.amd}
+        format={formatAmd}
+        empty={t('stats.chart.noSpending', { n: STAT_MONTHS })}
+        footer={<MonthCompare months={months} pick={(m) => m.amd} format={formatAmd} />}
+      />
+      <MonthBars
+        title={t('stats.chart.km')}
+        months={months}
+        value={(m) => m.km}
+        format={formatKm}
+        empty={t('stats.chart.noKm', { n: STAT_MONTHS })}
+        footer={<MonthCompare months={months} pick={(m) => m.km} format={formatKm} />}
+      />
+      <TrendLine
+        title={t('stats.chart.kmPerL')}
+        values={efficiency.map((p) => p.kmPerLiter ?? 0)}
+        format={(n) => t('stats.chart.kmPerLValue', { n: Math.round(n * 10) / 10 })}
+        empty={t('stats.chart.kmPerLNotEnough')}
+      />
+      <TrendLine
+        title={t('stats.chart.amdPerKm')}
+        values={efficiency.map((p) => p.amdPerKm ?? 0)}
+        format={(n) => t('stats.chart.amdPerKmValue', { n: Math.round(n * 10) / 10 })}
+        empty={t('stats.chart.kmPerLNotEnough')}
+      />
+      <TrendLine
+        title={t('stats.chart.price')}
+        values={trends.map((p) => p.pricePerLiter)}
+        format={(n) => t('summary.perLiter', { amd: formatAmd(n) })}
+        empty={t('stats.chart.notEnough')}
+      />
+      <Text style={[styles.label, styles.section]}>{t('stats.routes')}</Text>
+      <RouteTable routes={routes} />
+    </>
+  );
+}
+
+/** "This month 25 000 AMD · Oct 20 000 AMD", then the change, under a month chart. */
+function MonthCompare({
+  months,
+  pick,
+  format,
+}: {
+  months: MonthTotal[];
+  pick: (m: MonthTotal) => number;
+  format: (n: number) => string;
+}) {
+  const change = monthChange(months, pick);
+  if (!change) return null;
+  const prevMonth = new Date(months[months.length - 2].start).getMonth();
+  const sign = change.diff > 0 ? '+' : '';
+  const pct = change.ratio !== undefined ? ` (${sign}${Math.round(change.ratio * 100)}%)` : '';
+  return (
+    <View style={styles.compare}>
+      <Text style={styles.compareText}>
+        {t('stats.compare', {
+          current: format(change.current),
+          month: t(`lib.month.${prevMonth}` as StringKey),
+          previous: format(change.previous),
+        })}
+      </Text>
+      {change.diff !== 0 ? (
+        <Text style={styles.compareDiff}>
+          {sign}
+          {format(change.diff)}
+          {pct}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -645,5 +762,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: -spacing.sm,
   },
+  statsHint: {
+    color: colors.muted,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginBottom: -spacing.sm,
+  },
+  compare: { gap: 2 },
+  compareText: { color: colors.muted, fontFamily: fonts.num, fontSize: 13, fontWeight: '500' },
+  compareDiff: { color: colors.text, fontFamily: fonts.num, fontSize: 14, fontWeight: '700' },
   addRefuelText: { color: colors.accent, fontFamily: fonts.ui, fontSize: 15, fontWeight: '700' },
 });

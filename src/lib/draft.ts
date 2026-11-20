@@ -66,6 +66,17 @@ export function formKinds(kind: EntryKind): EntryKind[] {
 }
 
 /**
+ * Whether the form leads with one big, focused "Range left" field. Only the
+ * trip form that opens right after Stop does: the user is parked with the
+ * dashboard in front of them, the route is already filled in by GPS, and the
+ * one number left to type is what the car says. A manual or edited trip keeps
+ * places first; a reading already is just that big field.
+ */
+export function leadsWithRange(kind: EntryKind, fromGpsStop: boolean): boolean {
+  return fromGpsStop && kind === 'trip';
+}
+
+/**
  * A new trip from a finished recording. The GPS distance is only a pre-fill:
  * it lands in the same string field the user types into, so whatever they
  * type over it is what validation reads and what gets saved.

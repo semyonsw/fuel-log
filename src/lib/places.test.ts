@@ -54,6 +54,28 @@ describe('suggestPlaces', () => {
     ]);
   });
 
+  it('counts a place as From, stop and To alike, most used first', () => {
+    const entries = [
+      trip('a', 1, 'Home', 'Gym'),
+      trip('b', 2, 'Gym', 'Office', { stops: ['Market'] }),
+      trip('c', 3, 'Office', 'Gym'),
+      trip('d', 4, 'Market', 'Office'),
+      trip('e', 5, 'Office', 'Home'),
+    ];
+    // Office 4 (From 2, To 2), Gym 3, Market 2 (stop 1, From 1), Home 2 (newer use wins the tie).
+    expect(suggestPlaces(entries, '')).toEqual(['Office', 'Gym', 'Home', 'Market']);
+  });
+
+  it('while typing, prefix matches stay first and each group is most used first', () => {
+    const entries = [
+      trip('a', 1, 'Mall', 'Small park'),
+      trip('b', 2, 'Small park', 'Malatia'),
+      trip('c', 3, 'Small park', 'Malatia'),
+      trip('d', 4, 'Small park', 'Home'),
+    ];
+    expect(suggestPlaces(entries, 'mal')).toEqual(['Malatia', 'Mall', 'Small park']);
+  });
+
   it('respects the limit', () => {
     expect(suggestPlaces(realNotes, '', [], 2)).toEqual(['4micro', 'work']);
     expect(suggestPlaces(realNotes, '', [], 0)).toEqual([]);

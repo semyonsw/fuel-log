@@ -24,14 +24,24 @@ describe('hasLegacyData', () => {
     ).toBe(false);
   });
 
-  it('services, expenses, refuel extras, chats and budgets are worth a copy', () => {
+  it('chats alone are not: the chats store keeps them, and a fresh install chats too', () => {
+    expect(hasLegacyData({ ...none, chats: blob({ chats: [{ id: 'c' }] }) })).toBe(false);
+    expect(
+      hasLegacyData({
+        log: blob({ entries: [trip] }),
+        settings: blob({ consumption: '7', geminiModel: 'gemini-3.8-flash' }),
+        chats: blob({ chats: [{ id: 'c', messages: [] }] }),
+      }),
+    ).toBe(false);
+  });
+
+  it('services, expenses, refuel extras and budgets are worth a copy', () => {
     expect(hasLegacyData({ ...none, log: blob({ entries: [trip, service] }) })).toBe(true);
     const expense = { id: 'e', kind: 'expense', at: 4, category: 'wash', amountAmd: 2000 };
     expect(hasLegacyData({ ...none, log: blob({ entries: [expense] }) })).toBe(true);
     expect(hasLegacyData({ ...none, log: blob({ entries: [{ ...refuel, grade: '92' }] }) })).toBe(
       true,
     );
-    expect(hasLegacyData({ ...none, chats: blob({ chats: [{ id: 'c' }] }) })).toBe(true);
     expect(hasLegacyData({ ...none, settings: blob({ fuelBudget: '50000' }) })).toBe(true);
   });
 
@@ -63,11 +73,13 @@ describe('legacyBackup', () => {
     });
   });
 
-  it('this build can import it, keeping the kinds it still has', () => {
-    const r = parseBackup(legacyBackup(blobs, 0));
+  it('this build can import it, keeping the kinds it still has and the chats', () => {
+    const chat = { id: 'c', title: 'Range', createdAt: 1, updatedAt: 2, messages: [] };
+    const r = parseBackup(legacyBackup({ ...blobs, chats: blob({ chats: [chat] }) }, 0));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.backup.entries).toEqual([trip, refuel]);
-    expect(r.backup.settings).toEqual({ consumption: '8' });
+    expect(r.backup.chats?.map((c) => c.id)).toEqual(['c']);
+    expect(r.backup.settings).toEqual({ consumption: '8', geminiModel: 'm' });
   });
 });

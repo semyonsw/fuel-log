@@ -18,8 +18,8 @@ import { hasLegacyData, type LegacyBlobs } from '../lib/legacy';
 
 export const LOG_KEY = 'fuel-log/v1';
 export const SETTINGS_KEY = 'fuel-log/settings/v1';
-/** Where 1.7.x kept AI chats; no 2.0 store reads or writes it. */
-const CHATS_KEY = 'fuel-log/chats/v1';
+/** Where the AI chats live (1.7.x and again from 2.1; 2.0 deleted them). */
+export const CHATS_KEY = 'fuel-log/chats/v1';
 export const LEGACY_KEY = 'fuel-log/pre-2.0';
 
 /** What LEGACY_KEY holds: the blobs until written out, then only the marker. */
@@ -73,9 +73,11 @@ export async function readLegacy(): Promise<LegacyRecord | null> {
   }
 }
 
-/** The copy is in the backup folder: keep only the marker, free the blobs and the old chats. */
+/**
+ * The copy is in the backup folder: keep only the marker and free the blobs.
+ * The chats key is left alone; the chats store owns it again.
+ */
 export async function markLegacyWritten(): Promise<void> {
   const record: LegacyRecord = { written: true };
   await AsyncStorage.setItem(LEGACY_KEY, JSON.stringify(record));
-  await AsyncStorage.removeItem(CHATS_KEY);
 }

@@ -16,6 +16,17 @@ export const app = defineStrings({
   'app.settings.consumptionA11y': 'Consumption, litres per 100 km',
   'app.settings.consumptionUnit': 'L/100 km',
   'app.settings.consumptionHint': 'Leave blank to use the figure worked out from your refuels.',
+  'app.settings.ai': 'AI chat',
+  'app.settings.keyA11y': 'Gemini API key',
+  'app.settings.keySaved': 'Key saved. Type a new one to replace it',
+  'app.settings.keyHint':
+    'Gemini API key. Get one at aistudio.google.com. It is stored on this phone and in your backup file.',
+  'app.settings.keyPrivacy':
+    'Privacy: photos you send and your log (trips, places, refuels) go to Google Gemini to answer. Photos are not kept on this phone.',
+  'app.settings.saveKey': 'Save key',
+  'app.settings.removeKey': 'Remove key',
+  'app.settings.modelIntro': 'Model: current Gemini models that read photos.',
+  'app.settings.modelChecking': 'Checking which models your key can use…',
 
   'app.log.today': 'Today: {driven} driven',
   'app.log.todayUsed': '{used} range used',

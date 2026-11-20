@@ -71,22 +71,25 @@ export function DataSection() {
         `${done} ${plural('summary.data.entriesNow', r.total)}`,
       );
     };
-    Alert.alert(
-      t('summary.data.confirmTitle'),
-      t('summary.data.confirmBody', {
-        head,
-        entries: plural('summary.data.entries', b.entries.length),
-      }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('summary.data.replace'),
-          style: 'destructive',
-          onPress: () => void run('replace'),
-        },
-        { text: t('summary.data.merge'), onPress: () => void run('merge') },
-      ],
-    );
+    const entries = plural('summary.data.entries', b.entries.length);
+    // A 2.0.0 file has no chats; import leaves the phone's alone, so say that
+    // rather than "0 chats", which reads as if Replace would clear them.
+    const body = b.chats
+      ? t('summary.data.confirmBody', {
+          head,
+          entries,
+          chats: plural('summary.data.chats', b.chats.length),
+        })
+      : t('summary.data.confirmBodyNoChats', { head, entries });
+    Alert.alert(t('summary.data.confirmTitle'), body, [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('summary.data.replace'),
+        style: 'destructive',
+        onPress: () => void run('replace'),
+      },
+      { text: t('summary.data.merge'), onPress: () => void run('merge') },
+    ]);
   };
 
   return (

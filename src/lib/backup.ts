@@ -3,8 +3,11 @@
  *
  * ── WHAT IS IN IT ────────────────────────────────────────────────────────
  *
- * Entries and the typed consumption. Files written by 1.7.x also carry AI
- * chats, budgets, a model and an API key; this build reads past them.
+ * Entries, AI chats (text only — photos are never kept), the typed
+ * consumption, the chosen model, and the Gemini API key. The key is in plain
+ * text because the user asked for a backup that restores a fresh install
+ * completely; whoever has the file can use the key. Files written by 1.7.x
+ * also carry budgets; this build reads past them.
  *
  * ── ONE FILE, ALWAYS THE NEWEST ──────────────────────────────────────────
  *
@@ -19,10 +22,18 @@
  * A picked file can be anything. It is parsed and sanitised in full first;
  * only a file that is recognisably a Fuel Log backup gets as far as the
  * Merge / Replace question.
+ *
+ * ── WHAT A FILE DOES NOT CARRY, IMPORT DOES NOT TOUCH ────────────────────
+ *
+ * A 2.0.0 file has no chats and no model. Reading those as "no chats" and
+ * "no model" would make Replace wipe the phone's chats and model, so a field
+ * the file lacks stays `undefined` in the parsed backup and the import leaves
+ * that part of the phone alone, in either mode.
  */
 
 import { t } from '../i18n';
 import type { Entry } from '../types';
+import { sanitizeChats, type Chat } from './chat';
 import { sanitizeEntries } from './sanitize';
 
 export const BACKUP_APP = 'fuel-log';
@@ -30,6 +41,7 @@ export const BACKUP_FORMAT = 1;
 
 export type BackupSettings = {
   consumption: string;
+  geminiModel: string;
 };
 
 export type Backup = {
@@ -38,12 +50,16 @@ export type Backup = {
   exportedAt: string;
   appVersion: string;
   entries: Entry[];
+  chats: Chat[];
   settings: BackupSettings;
+  geminiApiKey: string;
 };
 
 export function buildBackup(input: {
   entries: Entry[];
+  chats: Chat[];
   settings: BackupSettings;
+  apiKey: string;
   appVersion: string;
   now: number;
 }): Backup {
@@ -53,7 +69,9 @@ export function buildBackup(input: {
     exportedAt: new Date(input.now).toISOString(),
     appVersion: input.appVersion,
     entries: input.entries,
+    chats: input.chats,
     settings: input.settings,
+    geminiApiKey: input.apiKey,
   };
 }
 
@@ -62,7 +80,15 @@ export function serializeBackup(b: Backup): string {
   return `${JSON.stringify(b, null, 2)}\n`;
 }
 
-export type ParsedBackup = { ok: true; backup: Backup } | { ok: false; error: string };
+/** A backup as read from a file: fields older files lack are `undefined`, not empty. */
+export type ImportedBackup = Omit<Backup, 'chats' | 'settings'> & {
+  chats?: Chat[];
+  settings: Partial<BackupSettings>;
+};
+
+export type ParsedBackup = { ok: true; backup: ImportedBackup } | { ok: false; error: string };
+
+const optionalString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 export function parseBackup(text: string): ParsedBackup {
   let raw: unknown;
@@ -78,7 +104,9 @@ export function parseBackup(text: string): ParsedBackup {
   if (typeof o.format !== 'number' || o.format > BACKUP_FORMAT) {
     return { ok: false, error: t('summary.backup.newer') };
   }
-  const s = (o.settings ?? {}) as Partial<BackupSettings>;
+  const s = (o.settings ?? {}) as Record<string, unknown>;
+  const consumption = optionalString(s.consumption);
+  const geminiModel = optionalString(s.geminiModel);
   return {
     ok: true,
     backup: {
@@ -87,42 +115,86 @@ export function parseBackup(text: string): ParsedBackup {
       exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '',
       appVersion: typeof o.appVersion === 'string' ? o.appVersion : '',
       entries: sanitizeEntries(o.entries),
-      settings: { consumption: typeof s.consumption === 'string' ? s.consumption : '' },
+      ...(Array.isArray(o.chats) ? { chats: sanitizeChats(o.chats) } : {}),
+      settings: {
+        ...(consumption === undefined ? {} : { consumption }),
+        ...(geminiModel === undefined ? {} : { geminiModel }),
+      },
+      geminiApiKey: typeof o.geminiApiKey === 'string' ? o.geminiApiKey : '',
     },
   };
 }
 
 /**
  * The settings after an import. The file fills in what this phone does not
- * have; in Replace mode the file wins outright.
+ * have; in Replace mode the file wins outright. A setting the file does not
+ * carry at all keeps the phone's value in both modes.
  */
 export function importedSettings(
   phone: BackupSettings,
-  file: BackupSettings,
+  file: Partial<BackupSettings>,
   mode: 'merge' | 'replace',
 ): BackupSettings {
-  const pick = (mine: string, theirs: string) => (mode === 'replace' || !mine ? theirs : mine);
-  return { consumption: pick(phone.consumption, file.consumption) };
+  const pick = (mine: string, theirs: string | undefined) =>
+    theirs === undefined ? mine : mode === 'replace' || !mine ? theirs : mine;
+  return {
+    consumption: pick(phone.consumption, file.consumption),
+    geminiModel: pick(phone.geminiModel, file.geminiModel),
+  };
 }
 
 /**
- * Merge by id: the file's version wins for ids on both sides, ids only on the
- * phone are kept, nothing is deleted. Counts are for the confirmation line.
+ * Merge by id: for ids on both sides `choose` picks the copy to keep (the
+ * file's by default), ids only on the phone are kept, nothing is deleted.
+ * Counts are for the confirmation line.
  */
 export function mergeById<T extends { id: string }>(
   current: T[],
   incoming: T[],
+  choose: (mine: T, theirs: T) => T = (_mine, theirs) => theirs,
 ): { items: T[]; added: number; updated: number } {
   const byId = new Map(current.map((x) => [x.id, x]));
   let added = 0;
   let updated = 0;
   for (const x of incoming) {
-    if (byId.has(x.id)) {
-      if (JSON.stringify(byId.get(x.id)) !== JSON.stringify(x)) updated += 1;
-    } else added += 1;
-    byId.set(x.id, x);
+    const mine = byId.get(x.id);
+    if (mine === undefined) {
+      added += 1;
+      byId.set(x.id, x);
+      continue;
+    }
+    const kept = choose(mine, x);
+    if (JSON.stringify(kept) !== JSON.stringify(mine)) updated += 1;
+    byId.set(x.id, kept);
   }
   return { items: [...byId.values()], added, updated };
+}
+
+/**
+ * Chats merge by recency, not by "the file wins": a chat continued on the
+ * phone after the backup was made must not be rolled back to the older copy
+ * (losing messages and `savedIds`, which would let the same change be
+ * approved twice). On a tie the phone's copy stays, because approving cards
+ * records `savedIds` without moving `updatedAt`, so the phone may be ahead.
+ */
+export function mergeChats(
+  current: Chat[],
+  incoming: Chat[],
+): { items: Chat[]; added: number; updated: number } {
+  return mergeById(current, incoming, (mine, theirs) =>
+    theirs.updatedAt > mine.updatedAt ? theirs : mine,
+  );
+}
+
+/**
+ * Whether the older backup files may be deleted after a write. Not when the
+ * keystore could not be read and no key has been set since: the file just
+ * written then carries a blank key, and the older files may hold the only
+ * other copy of it. Keeping them is the simplest safe answer — they are
+ * pruned again by the first backup after the key is readable or re-entered.
+ */
+export function canPruneBackups(apiKey: string, keyReadFailed: boolean): boolean {
+  return !keyReadFailed || apiKey !== '';
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');

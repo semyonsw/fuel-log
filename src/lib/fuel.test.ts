@@ -30,6 +30,11 @@ describe('latestPricePerLiter', () => {
     expect(latestPricePerLiter(log)).toBe(520);
   });
 
+  it('skips a refuel saved without a price', () => {
+    const log = [refuel('a', at(10, 9, 0), 30, 15000), refuel('b', at(12, 9, 0), 20, 0)];
+    expect(latestPricePerLiter(log)).toBe(500);
+  });
+
   it('can be limited to refuels at or before a time', () => {
     const log = [refuel('a', at(10, 9, 0), 30, 15000), refuel('b', at(12, 9, 0), 20, 10400)];
     expect(latestPricePerLiter(log, at(11, 9, 0))).toBe(500);

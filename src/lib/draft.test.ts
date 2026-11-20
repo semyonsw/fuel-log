@@ -4,6 +4,7 @@ import {
   draftFromEntry,
   emptyDraft,
   formKinds,
+  leadsWithRange,
   saveHint,
   validateDraft,
   type Draft,
@@ -260,5 +261,20 @@ describe('formKinds', () => {
       liters: 30,
       priceAmd: 15000,
     });
+  });
+});
+
+describe('leadsWithRange', () => {
+  it('leads with range on the trip form opened by a GPS stop', () => {
+    expect(leadsWithRange('trip', true)).toBe(true);
+  });
+
+  it('keeps the usual layout for a manual or edited trip', () => {
+    expect(leadsWithRange('trip', false)).toBe(false);
+  });
+
+  it('leaves readings and refuels alone even after a GPS stop', () => {
+    expect(leadsWithRange('reading', true)).toBe(false);
+    expect(leadsWithRange('refuel', true)).toBe(false);
   });
 });

@@ -11,7 +11,7 @@
  *
  * The timeline reads like the old notes, newest first, one card per day.
  * Rows in a day share one rounded card (corners on the first/last row only)
- * so a busy day reads as a unit. The refuel and "+" buttons float
+ * so a busy day reads as a unit. The AI, refuel and "+" buttons float
  * bottom-right, inside thumb reach, above the tab bar.
  */
 
@@ -52,11 +52,13 @@ export function LogScreen({
   onAdd,
   onAddRefuel,
   onEdit,
+  onAi,
   onTripRecorded,
 }: {
   onAdd: () => void;
   onAddRefuel: () => void;
   onEdit: (entry: Entry) => void;
+  onAi: () => void;
   onTripRecorded: (
     draft: Draft,
     markers: { from?: boolean; to?: boolean; distance?: boolean },
@@ -136,7 +138,7 @@ export function LogScreen({
         }
         contentContainerStyle={styles.list}
       />
-      <Fabs onRefuel={onAddRefuel} onAdd={onAdd} />
+      <Fabs onAi={onAi} onRefuel={onAddRefuel} onAdd={onAdd} />
     </View>
   );
 }

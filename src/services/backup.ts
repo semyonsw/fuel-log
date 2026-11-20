@@ -11,8 +11,9 @@
  *
  * ── AFTER EVERY CHANGE ───────────────────────────────────────────────────
  *
- * The log and the consumption setting are watched; any change schedules one
- * write a moment later (so a burst of edits is one file, not twenty). Writes are serialised: a new file is created first, and only once
+ * The log, chats and settings stores are watched; any change schedules one
+ * write a moment later (so typing a chat or a burst of edits is one file, not
+ * twenty). Writes are serialised: a new file is created first, and only once
  * it is fully written are the older backup files deleted, so a crash
  * mid-write never leaves the folder with nothing.
  *
@@ -31,17 +32,23 @@ import { t } from '../i18n';
 import {
   backupFileName,
   buildBackup,
+  canPruneBackups,
   importedSettings,
   mergeById,
+  mergeChats,
   parseBackup,
   serializeBackup,
   staleBackups,
   type Backup,
+  type ImportedBackup,
 } from '../lib/backup';
 import { LEGACY_FILE_NAME, legacyBackup } from '../lib/legacy';
+import { resolveModel } from '../lib/models';
+import { useChats } from '../state/chats';
 import { markLegacyWritten, readLegacy } from '../state/legacyStorage';
 import { useSettings } from '../state/settings';
 import { useLog } from '../state/store';
+import { apiKeyReadFailed, saveApiKey } from './secrets';
 
 const DEBOUNCE_MS = 1500;
 
@@ -50,9 +57,12 @@ function appVersion(): string {
 }
 
 function currentBackup(now: number): Backup {
+  const s = useSettings.getState();
   return buildBackup({
     entries: useLog.getState().entries,
-    settings: { consumption: useSettings.getState().consumption },
+    chats: useChats.getState().chats,
+    settings: { consumption: s.consumption, geminiModel: s.geminiModel },
+    apiKey: s.apiKey,
     appVersion: appVersion(),
     now,
   });
@@ -80,13 +90,28 @@ export function backupNow(): Promise<boolean> {
   return run;
 }
 
+/**
+ * Creates `name` in `dir` and writes `text` into it. If the write fails the
+ * just-created file is deleted, so a retry gets the same name back instead of
+ * SAF's "name (1).json", and no empty file is left looking like a backup.
+ */
+async function writeNewFile(dir: string, name: string, text: string): Promise<string> {
+  const uri = await SAF.createFileAsync(dir, name, 'application/json');
+  try {
+    await SAF.writeAsStringAsync(uri, text);
+  } catch (e) {
+    await SAF.deleteAsync(uri, { idempotent: true }).catch(() => {});
+    throw e;
+  }
+  return uri;
+}
+
 /** Writes the pending 1.7.x copy, if any, into `dir`. Failing leaves it pending for next time. */
 async function writeLegacyCopy(dir: string): Promise<void> {
   const record = await readLegacy();
   if (!record || record.written) return;
   try {
-    const uri = await SAF.createFileAsync(dir, LEGACY_FILE_NAME, 'application/json');
-    await SAF.writeAsStringAsync(uri, legacyBackup(record.blobs, Date.now()));
+    await writeNewFile(dir, LEGACY_FILE_NAME, legacyBackup(record.blobs, Date.now()));
     await markLegacyWritten();
   } catch {
     // Folder gone or unwritable: the regular backup reports that; retried next time.
@@ -100,13 +125,14 @@ async function writeOnce(): Promise<boolean> {
   const now = Date.now();
   const name = backupFileName(now);
   try {
-    const uri = await SAF.createFileAsync(dir, name, 'application/json');
-    await SAF.writeAsStringAsync(uri, serializeBackup(currentBackup(now)));
+    const uri = await writeNewFile(dir, name, serializeBackup(currentBackup(now)));
     // The new file is safely written by now; failing to tidy the old ones only
     // leaves an extra file, and must not report the backup itself as failed.
-    const listed = await SAF.readDirectoryAsync(dir).catch(() => [] as string[]);
-    for (const old of staleBackups(listed, uri)) {
-      await SAF.deleteAsync(old, { idempotent: true }).catch(() => {});
+    if (canPruneBackups(useSettings.getState().apiKey, apiKeyReadFailed())) {
+      const listed = await SAF.readDirectoryAsync(dir).catch(() => [] as string[]);
+      for (const old of staleBackups(listed, uri)) {
+        await SAF.deleteAsync(old, { idempotent: true }).catch(() => {});
+      }
     }
     useSettings.getState().set({ lastBackup: { at: now, ok: true, file: name } });
     return true;
@@ -138,12 +164,19 @@ export function startAutoBackup(): () => void {
   if (dir) chain = chain.then(() => writeLegacyCopy(dir));
   const unsubs = [
     useLog.subscribe((s, p) => s.entries !== p.entries && schedule()),
-    useSettings.subscribe((s, p) => s.consumption !== p.consumption && schedule()),
+    useChats.subscribe((s, p) => s.chats !== p.chats && schedule()),
+    useSettings.subscribe(
+      (s, p) =>
+        (s.consumption !== p.consumption ||
+          s.geminiModel !== p.geminiModel ||
+          s.apiKey !== p.apiKey) &&
+        schedule(),
+    ),
   ];
   return () => unsubs.forEach((u) => u());
 }
 
-export type PickedBackup = { ok: true; backup: Backup } | { ok: false; error?: string };
+export type PickedBackup = { ok: true; backup: ImportedBackup } | { ok: false; error?: string };
 
 /** Lets the user pick a .json and checks it fully; nothing is changed yet. */
 export async function pickBackupFile(): Promise<PickedBackup> {
@@ -160,20 +193,28 @@ export async function pickBackupFile(): Promise<PickedBackup> {
   }
 }
 
-/** Applies a checked backup. Returns the counts for the confirmation. */
-export async function applyBackup(b: Backup, mode: 'merge' | 'replace') {
+/**
+ * Applies a checked backup. Returns the counts for the confirmation. A file
+ * without chats (2.0.0) leaves the phone's chats as they are, in both modes.
+ */
+export async function applyBackup(b: ImportedBackup, mode: 'merge' | 'replace') {
   const log = useLog.getState();
+  const chats = useChats.getState();
   let added = b.entries.length;
   let updated = 0;
   if (mode === 'replace') {
     log.setAll(b.entries);
+    if (b.chats) chats.setAll(b.chats);
   } else {
     const m = mergeById(log.entries, b.entries);
     log.setAll(m.items);
+    if (b.chats) chats.setAll(mergeChats(chats.chats, b.chats).items);
     added = m.added;
     updated = m.updated;
   }
   const s = useSettings.getState();
-  s.set(importedSettings(s, b.settings, mode));
+  const next = importedSettings(s, b.settings, mode);
+  s.set({ ...next, geminiModel: resolveModel(next.geminiModel) });
+  if (b.geminiApiKey && (mode === 'replace' || !s.apiKey)) await saveApiKey(b.geminiApiKey);
   return { added, updated, total: useLog.getState().entries.length };
 }

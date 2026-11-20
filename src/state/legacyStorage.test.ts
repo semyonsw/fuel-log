@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { describe, expect, it } from 'vitest';
 
-import { LEGACY_KEY, markLegacyWritten, readLegacy } from './legacyStorage';
+import { CHATS_KEY, LEGACY_KEY, markLegacyWritten, readLegacy } from './legacyStorage';
 import { useSettings } from './settings';
 import { STORAGE_KEY, useLog } from './store';
 
@@ -27,7 +27,7 @@ describe('1.7.x safety copy', () => {
     const oldChats = JSON.stringify({ state: { chats: [{ id: 'c' }] }, version: 1 });
     await AsyncStorage.setItem(STORAGE_KEY, oldLog);
     await AsyncStorage.setItem('fuel-log/settings/v1', oldSettings);
-    await AsyncStorage.setItem('fuel-log/chats/v1', oldChats);
+    await AsyncStorage.setItem(CHATS_KEY, oldChats);
 
     await Promise.all([useLog.persist.rehydrate(), useSettings.persist.rehydrate()]);
     await flush();
@@ -47,10 +47,12 @@ describe('1.7.x safety copy', () => {
     await useLog.persist.rehydrate();
     expect(await readLegacy()).toEqual(record);
 
-    // Once written to the folder: only the marker stays, and the old chats go.
+    // Once written to the folder: only the marker stays, and the chats stay
+    // where the chats store reads them.
     await markLegacyWritten();
     expect(await readLegacy()).toEqual({ written: true });
-    expect(await AsyncStorage.getItem('fuel-log/chats/v1')).toBeNull();
+    expect(await AsyncStorage.getItem(CHATS_KEY)).toBe(oldChats);
     await AsyncStorage.removeItem(LEGACY_KEY);
+    await AsyncStorage.removeItem(CHATS_KEY);
   });
 });

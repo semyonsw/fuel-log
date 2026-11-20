@@ -15,7 +15,9 @@
  *
  * A form can open pre-filled from a GPS recording. Pre-filled fields carry a
  * small marker ("from GPS") until the user edits them; nothing is saved until
- * Save.
+ * Save. The one opened by Stop leads with a big "Range left" that takes focus
+ * once the sheet has slid in, so the keyboard is already up for the one
+ * number GPS cannot know (see `leadsWithRange`).
  *
  * Keyboard: the window resizes (softwareKeyboardLayoutMode "resize"), but with
  * edge-to-edge that isn't guaranteed on every Android version, so the sheet
@@ -46,6 +48,7 @@ import {
   draftFromEntry,
   emptyDraft,
   formKinds,
+  leadsWithRange,
   saveHint,
   validateDraft,
   type Draft,
@@ -90,12 +93,15 @@ export function EntryForm({
   editing,
   initial,
   initialMarkers,
+  fromGpsStop = false,
   onClose,
 }: {
   editing?: Entry;
   /** A pre-filled new entry (GPS recording, "Add refuel"). */
   initial?: Draft;
   initialMarkers?: FormMarkers;
+  /** Opened by Stop on a GPS recording: lead with a big, focused Range left. */
+  fromGpsStop?: boolean;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -170,10 +176,22 @@ export function EntryForm({
     return () => sub.remove();
   }, [onClose]);
 
+  const rangeRef = useRef<TextInput>(null);
+  // Decided at open, like the kinds: switching to Range and back is not a new stop.
+  const [focusRangeAtOpen] = useState(() => leadsWithRange(draft.kind, fromGpsStop));
+  const rangeFirst = leadsWithRange(draft.kind, fromGpsStop);
+
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(slide, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-  }, [slide]);
+    // Focus once the sheet has landed, not via autoFocus: on Android a focus
+    // during the slide-in can land before the window takes input, and then
+    // the field shows a cursor but the keyboard never opens.
+    Animated.timing(slide, { toValue: 1, duration: 220, useNativeDriver: true }).start(
+      ({ finished }) => {
+        if (finished && focusRangeAtOpen) rangeRef.current?.focus();
+      },
+    );
+  }, [slide, focusRangeAtOpen]);
 
   // Focus the stop that "+ Add stop" just created, so the user can type at once.
   const stopRefs = useRef<(TextInput | null)[]>([]);
@@ -206,6 +224,31 @@ export function EntryForm({
   /** Every place on the form except the one at `index`, for chip exclusion. */
   const othersThan = (index: number) => places.filter((p, i) => i !== index && p.trim() !== '');
   const gpsKm = draft.track && draft.track.length > 1 ? trackDistanceKm(draft.track) : undefined;
+
+  // The Range kind's field, and the head of the trip form a GPS stop opens.
+  const bigRange = (
+    <View style={styles.bigBlock}>
+      <Field
+        ref={rangeRef}
+        label={t('form.rangeLeft')}
+        suffix={km}
+        numeric
+        big
+        keyboardType="decimal-pad"
+        value={draft.range}
+        onChangeText={(v) => set('range', v)}
+        error={errors.range}
+        marker={markers.range}
+        placeholder={rangePlaceholder}
+        autoFocus={draft.kind === 'reading' && !editing && !initial}
+      />
+      {liveUsed !== undefined ? (
+        <Text style={styles.live}>
+          <Text style={styles.liveNum}>−{formatDelta(liveUsed)}</Text> {t('form.sinceLast')}
+        </Text>
+      ) : null}
+    </View>
+  );
 
   return (
     <Animated.View
@@ -250,6 +293,8 @@ export function EntryForm({
         >
           {draft.kind === 'trip' ? (
             <>
+              {rangeFirst ? bigRange : null}
+
               {draft.track && draft.track.length > 1 ? (
                 <View style={styles.mapBlock}>
                   <SectionLabel>{t('form.route')}</SectionLabel>
@@ -356,19 +401,21 @@ export function EntryForm({
                     placeholder="22,5"
                   />
                 </View>
-                <View style={styles.flex}>
-                  <Field
-                    label={t('form.rangeLeft')}
-                    suffix={km}
-                    numeric
-                    keyboardType="decimal-pad"
-                    value={draft.range}
-                    onChangeText={(v) => set('range', v)}
-                    error={errors.range}
-                    marker={markers.range}
-                    placeholder={rangePlaceholder}
-                  />
-                </View>
+                {rangeFirst ? null : (
+                  <View style={styles.flex}>
+                    <Field
+                      label={t('form.rangeLeft')}
+                      suffix={km}
+                      numeric
+                      keyboardType="decimal-pad"
+                      value={draft.range}
+                      onChangeText={(v) => set('range', v)}
+                      error={errors.range}
+                      marker={markers.range}
+                      placeholder={rangePlaceholder}
+                    />
+                  </View>
+                )}
               </View>
               {estimate ? (
                 <Text style={styles.estimate}>
@@ -380,26 +427,7 @@ export function EntryForm({
               ) : null}
             </>
           ) : draft.kind === 'reading' ? (
-            <View style={styles.bigBlock}>
-              <Field
-                label={t('form.rangeLeft')}
-                suffix={km}
-                numeric
-                big
-                keyboardType="decimal-pad"
-                value={draft.range}
-                onChangeText={(v) => set('range', v)}
-                error={errors.range}
-                marker={markers.range}
-                placeholder={rangePlaceholder}
-                autoFocus={!editing && !initial}
-              />
-              {liveUsed !== undefined ? (
-                <Text style={styles.live}>
-                  <Text style={styles.liveNum}>−{formatDelta(liveUsed)}</Text> {t('form.sinceLast')}
-                </Text>
-              ) : null}
-            </View>
+            bigRange
           ) : (
             <>
               <View style={styles.pair}>

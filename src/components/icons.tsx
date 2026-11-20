@@ -234,3 +234,68 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }, { translateY: 1 }],
   },
 });
+
+/** The AI chat: three four-point sparkles, filled. */
+export function SparklesIcon({ size = 28, color = colors.onAccent }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M10 2.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"
+        fill={color}
+      />
+      <Path
+        d="M18.5 13c.3 2 1.3 3 3.3 3.3-2 .3-3 1.3-3.3 3.3-.3-2-1.3-3-3.3-3.3 2-.3 3-1.3 3.3-3.3z"
+        fill={color}
+      />
+      <Path
+        d="M6 16.5c.2 1.4.9 2.1 2.3 2.3-1.4.2-2.1.9-2.3 2.3-.2-1.4-.9-2.1-2.3-2.3 1.4-.2 2.1-.9 2.3-2.3z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function CameraIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <Circle cx="12" cy="13" r="3.6" />
+    </Line>
+  );
+}
+
+export function GalleryIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <Circle cx="8.5" cy="9.5" r="1.6" />
+      <Path d="M21 16l-5-5-8 8.5" />
+    </Line>
+  );
+}
+
+export function SendIcon({ size = 22, color = colors.onAccent }: IconProps) {
+  return (
+    <Line size={size} color={color} width={2.2}>
+      <Path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" />
+    </Line>
+  );
+}
+
+export function HistoryIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+      <Path d="M3 3.5V8h4.5" />
+      <Path d="M12 7.5V12l3 2" />
+    </Line>
+  );
+}
+
+export function TrashIcon(p: IconProps) {
+  return (
+    <Line {...p}>
+      <Path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" />
+    </Line>
+  );
+}

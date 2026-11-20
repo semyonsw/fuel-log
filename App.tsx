@@ -1,11 +1,11 @@
 /**
- * App shell: safe area, system colours, the three tabs, and the entry form
- * overlay.
+ * App shell: safe area, system colours, the three tabs, and the overlays (the
+ * entry form and the AI chat).
  *
- * No navigation library: there are three tabs and one form, so plain state is
- * simpler and has no native setup. The form renders above the tabs (tab bar
- * included) so it behaves like a full-screen sheet and handles its own
- * Android back. Back on Summary or Settings returns to History before leaving
+ * No navigation library: there are three tabs, one form and one chat, so plain
+ * state is simpler and has no native setup. Overlays render above the tabs
+ * (tab bar included) so they behave like full-screen sheets and handle their
+ * own Android back. Back on Summary or Settings returns to History before leaving
  * the app, which is what Android users expect from a bottom-tab app.
  *
  * The tab bar is icons only; a long press reveals the names (see
@@ -13,7 +13,7 @@
  * outside the bar, a tap or the start of a scroll, hides them again.
  *
  * Until the stores have read AsyncStorage (and a trip left recording by a
- * killed app is restored) we show a bare loading state, so a user with
+ * killed app is restored, and the Gemini key is read from the keystore) we show a bare loading state, so a user with
  * history never sees the "nothing logged yet" screen flash. The first launch
  * shows the welcome/permissions screen once. Auto-backup starts only after
  * everything has loaded, so a half-read store is never written out.
@@ -35,12 +35,15 @@ import { t, type StringKey } from './src/i18n';
 import { emptyDraft, type Draft } from './src/lib/draft';
 import { nextLabelsShown, type TabLabelEvent } from './src/lib/tabLabels';
 import { startAutoBackup } from './src/services/backup';
+import { loadApiKey } from './src/services/secrets';
 import { restoreTracking } from './src/services/tracking';
+import { ChatScreen } from './src/screens/ChatScreen';
 import { EntryForm, type FormMarkers } from './src/screens/EntryForm';
 import { LogScreen } from './src/screens/LogScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SummaryScreen } from './src/screens/SummaryScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
+import { useChats } from './src/state/chats';
 import { useSettings } from './src/state/settings';
 import { useLog } from './src/state/store';
 import { colors, fonts, spacing } from './src/theme';
@@ -48,7 +51,14 @@ import type { Entry } from './src/types';
 
 type Tab = 'history' | 'summary' | 'settings';
 /** null = closed; `editing` = an existing entry; `initial` = a pre-filled new one. */
-type FormState = { editing?: Entry; initial?: Draft; markers?: FormMarkers; key: string } | null;
+type FormState = {
+  editing?: Entry;
+  initial?: Draft;
+  markers?: FormMarkers;
+  /** Opened by Stop on a GPS recording (the form then leads with Range left). */
+  fromGpsStop?: boolean;
+  key: string;
+} | null;
 
 export default function App() {
   useEffect(() => {
@@ -68,16 +78,18 @@ export default function App() {
 function Shell() {
   const logReady = useLog((s) => s.hydrated);
   const settingsReady = useSettings((s) => s.hydrated);
+  const chatsReady = useChats((s) => s.hydrated);
   const onboarded = useSettings((s) => s.onboarded);
-  const [trackingReady, setTrackingReady] = useState(false);
+  const [extrasReady, setExtrasReady] = useState(false);
   const [tab, setTab] = useState<Tab>('history');
   const [form, setForm] = useState<FormState>(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const [labelsShown, setLabelsShown] = useState(false);
   const barTouch = useRef(false);
-  const ready = logReady && settingsReady && trackingReady;
+  const ready = logReady && settingsReady && chatsReady && extrasReady;
 
   useEffect(() => {
-    restoreTracking().finally(() => setTrackingReady(true));
+    Promise.all([loadApiKey(), restoreTracking()]).finally(() => setExtrasReady(true));
   }, []);
   useEffect(() => (ready ? startAutoBackup() : undefined), [ready]);
 
@@ -97,12 +109,15 @@ function Shell() {
           ...(m.to ? { to: mark } : {}),
           ...(m.distance ? { distance: mark } : {}),
         },
+        fromGpsStop: true,
         key: `gps-${Date.now()}`,
       });
     },
     [],
   );
   const closeForm = useCallback(() => setForm(null), []);
+  const openChat = useCallback(() => setChatOpen(true), []);
+  const closeChat = useCallback(() => setChatOpen(false), []);
   const labelEvent = useCallback(
     (e: TabLabelEvent) => setLabelsShown((shown) => nextLabelsShown(shown, e)),
     [],
@@ -118,13 +133,13 @@ function Shell() {
   }, [labelEvent]);
 
   useEffect(() => {
-    if (form || tab === 'history') return;
+    if (form || chatOpen || tab === 'history') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       setTab('history');
       return true;
     });
     return () => sub.remove();
-  }, [form, tab]);
+  }, [form, chatOpen, tab]);
 
   if (!ready) {
     return (
@@ -148,6 +163,7 @@ function Shell() {
             onAdd={openNew}
             onAddRefuel={openRefuel}
             onEdit={openEdit}
+            onAi={openChat}
             onTripRecorded={openRecorded}
           />
         ) : tab === 'summary' ? (
@@ -163,12 +179,14 @@ function Shell() {
         onLabelEvent={labelEvent}
         onBarTouch={markBarTouch}
       />
+      {chatOpen ? <ChatScreen onClose={closeChat} /> : null}
       {form ? (
         <EntryForm
           key={form.key}
           editing={form.editing}
           initial={form.initial}
           initialMarkers={form.markers}
+          fromGpsStop={form.fromGpsStop}
           onClose={closeForm}
         />
       ) : null}
